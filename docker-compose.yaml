@@ -1,0 +1,36 @@
+version: '3'
+services:
+    zed-ros2:
+        privileged: true
+        image: "olagh/zed_docker:insightface_test"
+        ipc: host
+        pid: host
+        network_mode: host
+        cap_add:
+            - SYS_PTRACE
+        environment:
+            - PULSE_SERVER=tcp:host.docker.internal:4713
+            - ROS_DOMAIN_ID=25
+#            - DISPLAY=$DISPLAY
+#            - FASTRTPS_DEFAULT_PROFILES_FILE=/profile/fastrtps_default_profiles.xml
+            - cam_loc=kitchen
+            - tf_topic=zed_kitchen
+            - encoding_loc=/root/ros2_ws/src/
+        volumes:
+            - /tmp/.X11-unix/:/tmp/.X11-unix
+            - ./profile:/profile
+            - ./zed_launch.bash:/tmp/zed_launch.bash
+            - /dev:/dev
+            - /dev/video0:/dev/video0
+            - /dev/video1:/dev/video1
+            - /usr/local/zed/resources:/usr/local/zed/resources
+            - /home/jetson/face_recoginition:/home/jetson/face_recoginition
+        tty: true
+        command: /tmp/zed_launch.bash
+        deploy: 
+         resources:
+          reservations:
+           devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
