@@ -27,11 +27,46 @@ import matplotlib.pyplot as plt
 from scipy.spatial.distance import cosine
 import pickle
 import os 
+from std_msgs.msg import Int32  # ROS2 Integer Message
+
+class LabelPublisher(Node):
+    def __init__(self):
+        super().__init__('label_publisher')
+
+        # Create two publishers
+        self.h_label_publisher = self.create_publisher(Int32, 'H_label', 10)
+        self.f_label_publisher = self.create_publisher(Int32, 'F_label', 10)
+
+    # Store last known values (initialized to -1 if no detection yet)
+        self.last_h_label = -1
+        self.last_f_label = -1
+
+        # Timer to ensure continuous publishing (publishes every 0.5 sec)
+        self.timer = self.create_timer(0.5, self.continuous_publish)
+
+    def update_labels(self, h_label, f_label):
+        """Update labels with new values from HeadTracker."""
+        print(f'Labesl have been updated ')
+        self.last_h_label = h_label
+        self.last_f_label = f_label
+        self.continuous_publish()
+
+    def continuous_publish(self):
+        """Continuously publish the last known values."""
+        h_msg = Int32()
+        h_msg.data = self.last_h_label
+        self.h_label_publisher.publish(h_msg)
+
+        f_msg = Int32()
+        f_msg.data = self.last_f_label
+        self.f_label_publisher.publish(f_msg)
+
+        self.get_logger().info(f"Published (Continuous) -> H_label: {self.last_h_label}, F_label: {self.last_f_label}")
 
 
 
 class ObjectTracker(Node):
-    def __init__(self):
+    def __init__(self, publisher):
         super().__init__('object_tracker')
 
         # ROS2 Subscribers
@@ -47,6 +82,8 @@ class ObjectTracker(Node):
             self.image_callback,
             10)
         
+        self.publisher = publisher
+
         # CvBridge to convert ROS Image to OpenCV
         self.bridge = CvBridge()
         self.latest_image = None  # Store the latest left camera image
@@ -85,10 +122,8 @@ class ObjectTracker(Node):
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, new_width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, new_height)
 
-        with open("face_database.pkl", "rb") as f:
+        with open("face_database_lab.pkl", "rb") as f:
             self.face_database = pickle.load(f)
-
-
 
     def image_callback(self, msg):
         """Stores the latest image from the left camera."""
@@ -157,6 +192,8 @@ class ObjectTracker(Node):
         """ Compare face embedding with database and return the best match. """
         if len(self.face_database) == 0:
             return "Unknown"
+        for name, stored_embedding in self.face_database.items():
+            print(name)
 
         best_match = None
         best_score = float('inf')  # Lower is better
@@ -170,7 +207,8 @@ class ObjectTracker(Node):
         return best_match if best_score < threshold else "Unknown" , best_score
 
     def get_usb_with_3d_heads(self, usb_image, faces, head_positions, R, T, usb_intrinsics):
-
+        
+        name = "Unknown"
         for id in head_positions.keys():
             
             point_zed = np.array(head_positions[id]).reshape(3, 1)
@@ -217,10 +255,10 @@ class ObjectTracker(Node):
 
                 cv2.imwrite(os.path.join('results',f'frame_{id}.jpg'), usb_image)
 
-                return True
+                return True, name
             else:
                 print (f'Face point is out of boundry')
-                return False
+                return False, name
 
     def process_new_object(self, id ,head):
         """Process and save the detected object's head image."""
@@ -236,10 +274,24 @@ class ObjectTracker(Node):
             return False
          
         print(f'Number of faces detected {len(faces)}')
-        face_recoginized  = self.get_usb_with_3d_heads(face_image, faces, head, self.R, self.T, self.usb_intrinsics)
+        face_recoginized,name  = self.get_usb_with_3d_heads(face_image, faces, head, self.R, self.T, self.usb_intrinsics)
 
         if face_recoginized:
             print (f'We found a match for the body_id {id}')
+
+            """Process data and publish closest head & face labels."""
+            h_label = 0 
+            f_label = 0
+
+            if name == "p1_1" or name == "p1_2" or name == "p1_3":
+                h_label = id  
+            
+            elif name == "p2_1" or name == "p2_2" or name == "p2_3":
+                f_label = id  
+
+            # Update publisher with the new values
+            self.publisher.update_labels(h_label, f_label)
+
             return True
         
         print (f'!!!!!!!!!!! No match found for the body_id {id}')
@@ -247,11 +299,18 @@ class ObjectTracker(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = ObjectTracker()
-    rclpy.spin(node)
-    node.destroy_node()
+
+    # Create publisher
+    publisher = LabelPublisher()
+
+    # Create subscriber (HeadTracker) and pass the publisher reference
+    tracker = ObjectTracker(publisher)
+
+    rclpy.spin(tracker)
+
+    tracker.destroy_node()
     rclpy.shutdown()
-    node.cap.release()
+    tracker.cap.release()
 
 if __name__ == '__main__':
     main()
