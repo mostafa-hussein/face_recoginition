@@ -147,6 +147,7 @@ class ObjectTracker(Node):
                 continue  # Ignore if we already processed this ID
             
             head_position = obj.head_position
+            print(f'Head pos size {head_position.shape}')
             transformed_head_position = self.transform_point(head_position)
             new_body[obj_id] = transformed_head_position
             self.get_logger().info(f'New object detected: ID {obj_id}, Label: {obj.label}')
@@ -192,8 +193,8 @@ class ObjectTracker(Node):
         """ Compare face embedding with database and return the best match. """
         if len(self.face_database) == 0:
             return "Unknown"
-        for name, stored_embedding in self.face_database.items():
-            print(name)
+        # for name, stored_embedding in self.face_database.items():
+        #     print(name)
 
         best_match = None
         best_score = float('inf')  # Lower is better
