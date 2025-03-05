@@ -8,7 +8,7 @@ import onnxruntime
 import sklearn
 from insightface.app import FaceAnalysis
 
-from zed_msgs.msg import ObjectsStamped
+from zed_interfaces.msg import ObjectsStamped
 
 from rclpy.node import Node
 from sensor_msgs.msg import Image
@@ -20,57 +20,30 @@ import tf2_geometry_msgs
 from geometry_msgs.msg import PointStamped
 from std_msgs.msg import Int32  
 
-class LabelPublisher(Node):
-    def __init__(self):
-        super().__init__('label_publisher')
-
-        # Create two publishers
-        self.h_label_publisher = self.create_publisher(Int32, 'H_label', 10)
-        self.f_label_publisher = self.create_publisher(Int32, 'F_label', 10)
-
-    # Store last known values (initialized to -1 if no detection yet)
-        self.last_h_label = -1
-        self.last_f_label = -1
-
-        # Timer to ensure continuous publishing (publishes every 0.5 sec)
-        self.timer = self.create_timer(0.5, self.continuous_publish)
-
-    def update_labels(self, h_label, f_label):
-        """Update labels with new values from HeadTracker."""
-        print(f'Labesl have been updated ')
-        self.last_h_label = h_label
-        self.last_f_label = f_label
-        self.continuous_publish()
-
-    def continuous_publish(self):
-        """Continuously publish the last known values."""
-        h_msg = Int32()
-        h_msg.data = self.last_h_label
-        self.h_label_publisher.publish(h_msg)
-
-        f_msg = Int32()
-        f_msg.data = self.last_f_label
-        self.f_label_publisher.publish(f_msg)
-
-        self.get_logger().info(f"Published (Continuous) -> H_label: {self.last_h_label}, F_label: {self.last_f_label}")
-
-
+cam = os.getenv("cam_loc")
 
 class ObjectTracker(Node):
-    def __init__(self, publisher):
+    def __init__(self):
         super().__init__('object_tracker')
 
-        # time.sleep(2)
-        # ROS2 Subscribers
+        self.h_label_publisher = self.create_publisher(Int32, f'{cam}_h_label', 10)
+        self.s_label_publisher = self.create_publisher(Int32, f'{cam}_s_label', 10)
+        
+        self.last_h_label = -1
+        self.last_s_label = -1
+        
+        self.timer = self.create_timer(0.5, self.continuous_publish)
+
+        
         self.objects_sub = self.create_subscription(
             ObjectsStamped,
-            '/zed/zed_node/body_trk/skeletons',  # Correct topic name
+            f'/zed_{cam}/zed_node_{cam}/body_trk/skeletons',  # Correct topic name
             self.objects_callback,
             10)
 
         self.image_sub = self.create_subscription(
             Image,
-            '/zed/zed_node/left/image_rect_color',
+            f'/zed_{cam}/zed_node_{cam}/left/image_rect_color',
             self.image_callback,
             10)
         
@@ -99,13 +72,15 @@ class ObjectTracker(Node):
 
         # TF2 Broadcaster
         self.tf_broadcaster = TransformBroadcaster(self)
+        print (f'Done array initializations ')
         
         # TF2 buffer and listener
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         
-        self.arcface = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
-        self.arcface.prepare(ctx_id=0)
+        self.arcface = None
+        
+        print(f'Finished insight face init')
 
         self.cap = cv2.VideoCapture(0)  # USB Camera
 
@@ -116,7 +91,28 @@ class ObjectTracker(Node):
 
         with open("face_database_lab.pkl", "rb") as f:
             self.face_database = pickle.load(f)
+        
+        print(f'Finished all init')
+    
+    def update_labels(self, h_label, s_label):
+        """Update labels with new values from HeadTracker."""
+        print(f'Labesl have been updated ')
+        self.last_h_label = f'{cam}_h_label'
+        self.last_s_label = f'{cam}_s_label'
+        self.continuous_publish()
 
+    def continuous_publish(self):
+        """Continuously publish the last known values."""
+        h_msg = Int32()
+        h_msg.data = self.last_h_label
+        self.h_label_publisher.publish(h_msg)
+
+        f_msg = Int32()
+        f_msg.data = self.last_s_label
+        self.f_label_publisher.publish(f_msg)
+
+        self.get_logger().info(f"Published (Continuous) -> H_label: {self.last_h_label}, S_label: {self.last_s_label}")
+        
     def image_callback(self, msg):
         """Stores the latest image from the left camera."""
         # self.get_logger().info(f'I am in processing images')
@@ -159,8 +155,8 @@ class ObjectTracker(Node):
     def transform_point(self, point):
         try:
             # Check if the transform exists before using it
-            source_frame = "zed_left_camera_frame"
-            target_frame = "zed_left_camera_optical_frame"
+            source_frame = f"zed_{cam}_left_camera_frame"
+            target_frame = f"zed_{cam}_left_camera_optical_frame"
 
             if not self.tf_buffer.can_transform(target_frame, source_frame, rclpy.time.Time()):
                 self.get_logger().warn(f"Transform missing: {source_frame} -> {target_frame}. Skipping transformation.")
@@ -186,7 +182,10 @@ class ObjectTracker(Node):
 
     def detect_faces(self):
         """Detect faces using a USB camera and OpenCV."""
-
+	if self.arcface is None:
+	    self.arcface = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
+            self.arcface.prepare(ctx_id=0)
+        
         ret, frame = self.cap.read()
         faces = None
         if ret:
@@ -308,11 +307,9 @@ class ObjectTracker(Node):
 def main(args=None):
     rclpy.init(args=args)
 
-    # Create publisher
-    publisher = LabelPublisher()
-
+   
     # Create subscriber (HeadTracker) and pass the publisher reference
-    tracker = ObjectTracker(publisher)
+    tracker = ObjectTracker()
 
     rclpy.spin(tracker)
 
