@@ -20,9 +20,7 @@ import tf2_geometry_msgs
 from geometry_msgs.msg import PointStamped
 from std_msgs.msg import Int32  
 
-cam_test = os.getenv("cam_loc")
-print("ccam_test" ,cam_test)
-cam = "dining_room"
+cam = os.getenv("cam_loc")
 
 class ObjectTracker(Node):
     def __init__(self):
@@ -39,13 +37,13 @@ class ObjectTracker(Node):
         
         self.objects_sub = self.create_subscription(
             ObjectsStamped,
-            f'/{cam}/zed_node/body_trk/skeletons',  # Correct topic name
+            f'/zed_{cam}/zed_node_{cam}/body_trk/skeletons',  # Correct topic name
             self.objects_callback,
             10)
 
         self.image_sub = self.create_subscription(
             Image,
-            f'/{cam}/zed_node/left/image_rect_color',
+            f'/zed_{cam}/zed_node{cam}/left/image_rect_color',
             self.image_callback,
             10)
         
@@ -82,7 +80,7 @@ class ObjectTracker(Node):
         
         print(f'Finished insight face init')
 
-        self.cap = cv2.VideoCapture(2)  # USB Camera
+        self.cap = cv2.VideoCapture(0)  # USB Camera
 
         new_width = 1920
         new_height = 1080
@@ -155,8 +153,8 @@ class ObjectTracker(Node):
     def transform_point(self, point):
         try:
             # Check if the transform exists before using it
-            source_frame = f"{cam}_left_camera_frame"
-            target_frame = f"{cam}_left_camera_optical_frame"
+            source_frame = f"zed_{cam}_left_camera_frame"
+            target_frame = f"zed_{cam}_left_camera_optical_frame"
 
             if not self.tf_buffer.can_transform(target_frame, source_frame, rclpy.time.Time()):
                 self.get_logger().warn(f"Transform missing: {source_frame} -> {target_frame}. Skipping transformation.")
