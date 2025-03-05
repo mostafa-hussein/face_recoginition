@@ -43,7 +43,7 @@ class ObjectTracker(Node):
 
         self.image_sub = self.create_subscription(
             Image,
-            f'/zed_{cam}/zed_node{cam}/left/image_rect_color',
+            f'/zed_{cam}/zed_node_{cam}/left/image_rect_color',
             self.image_callback,
             10)
         
@@ -109,7 +109,7 @@ class ObjectTracker(Node):
         f_msg.data = self.last_s_label
         self.s_label_publisher.publish(f_msg)
 
-        self.get_logger().info(f"Published (Continuous) -> H_label: {self.last_h_label}, S_label: {self.last_s_label}")
+        #self.get_logger().info(f"Published (Continuous) -> H_label: {self.last_h_label}, S_label: {self.last_s_label}")
         
     def image_callback(self, msg):
         """Stores the latest image from the left camera."""
