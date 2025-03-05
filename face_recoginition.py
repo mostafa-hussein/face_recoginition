@@ -1,32 +1,24 @@
-import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import Image
-from zed_msgs.msg import ObjectsStamped
-from zed_msgs.msg import Skeleton3D
-
-from cv_bridge import CvBridge
 import cv2
 import numpy as np
-import rclpy
-from rclpy.node import Node
-from cv_bridge import CvBridge
-import numpy as np
-import cv2
-from tf2_ros import Buffer, TransformListener, TransformBroadcaster, TransformException
-import matplotlib.pyplot as plt
-import tf2_geometry_msgs
-from geometry_msgs.msg import PointStamped
-from zed_msgs.msg import ObjectsStamped
-import cv2
-import pyzed.sl as sl
-import numpy as np
-import onnxruntime
-import sklearn
-from insightface.app import FaceAnalysis
-import matplotlib.pyplot as plt
 from scipy.spatial.distance import cosine
 import pickle
 import os 
+import rclpy
+import onnxruntime
+import sklearn
+import time
+from insightface.app import FaceAnalysis
+
+from rclpy.node import Node
+from sensor_msgs.msg import Image
+from zed_msgs.msg import ObjectsStamped
+from cv_bridge import CvBridge
+from rclpy.node import Node
+from cv_bridge import CvBridge
+from tf2_ros import Buffer, TransformListener, TransformBroadcaster, TransformException
+import tf2_geometry_msgs
+from geometry_msgs.msg import PointStamped
+from zed_msgs.msg import ObjectsStamped
 from std_msgs.msg import Int32  # ROS2 Integer Message
 
 class LabelPublisher(Node):
@@ -69,6 +61,7 @@ class ObjectTracker(Node):
     def __init__(self, publisher):
         super().__init__('object_tracker')
 
+        # time.sleep(2)
         # ROS2 Subscribers
         self.objects_sub = self.create_subscription(
             ObjectsStamped,
@@ -128,10 +121,13 @@ class ObjectTracker(Node):
     def image_callback(self, msg):
         """Stores the latest image from the left camera."""
         # self.get_logger().info(f'I am in processing images')
-        try:
-            self.latest_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-        except Exception as e:
-            self.get_logger().error(f"Failed to convert image: {e}")
+        if self.latest_image is None:
+            try:
+                self.latest_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+            except Exception as e:
+                self.get_logger().error(f"Failed to convert image: {e}")
+        else:
+            return
 
     def objects_callback(self, msg):
         """Processes detected objects and extracts head positions."""
@@ -148,6 +144,9 @@ class ObjectTracker(Node):
             
             head_position = obj.head_position
             print(f'Head pos size {head_position.shape}')
+            print(f'Head pos size {head_position}')
+
+
             transformed_head_position = self.transform_point(head_position)
             new_body[obj_id] = transformed_head_position
             self.get_logger().info(f'New object detected: ID {obj_id}, Label: {obj.label}')
@@ -160,22 +159,31 @@ class ObjectTracker(Node):
             
     def transform_point(self, point):
         try:
+            # Check if the transform exists before using it
+            source_frame = "zed_left_camera_frame"
+            target_frame = "zed_left_camera_optical_frame"
+
+            if not self.tf_buffer.can_transform(target_frame, source_frame, rclpy.time.Time()):
+                self.get_logger().warn(f"Transform missing: {source_frame} -> {target_frame}. Skipping transformation.")
+                return None
+
             # Create a PointStamped message for the 3D head position
             point_stamped = PointStamped()
-            point_stamped.header.frame_id = "zed_left_camera_frame"  # Source frame
+            point_stamped.header.frame_id = source_frame  # Source frame
             point_stamped.header.stamp = self.get_clock().now().to_msg()
-            point_stamped.point.x = float(point[0])*1000
-            point_stamped.point.y = float(point[1])*1000
-            point_stamped.point.z = float(point[2])*1000
+            point_stamped.point.x = float(point[0]) * 1000
+            point_stamped.point.y = float(point[1]) * 1000
+            point_stamped.point.z = float(point[2]) * 1000
 
             # Transform the point to the left_camera_optical_frame
-            transformed_point = self.tf_buffer.transform(point_stamped, "zed_left_camera_optical_frame")
-            
-            # self.get_logger().info(f"Transformed Point: ({transformed_point.point.x}, {transformed_point.point.y}, {transformed_point.point.z})")
+            transformed_point = self.tf_buffer.transform(point_stamped, target_frame)
 
             return [transformed_point.point.x, transformed_point.point.y, transformed_point.point.z]
-        except (TransformException, Exception) as e:
+
+        except (tf2_ros.TransformException, Exception) as e:
             self.get_logger().error(f"Error transforming point: {e}")
+            return None
+
 
     def detect_faces(self):
         """Detect faces using a USB camera and OpenCV."""
