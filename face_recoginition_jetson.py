@@ -285,8 +285,8 @@ class ObjectTracker(Node):
             print (f'We found a match for the body_id {id}')
 
             """Process data and publish closest head & face labels."""
-            h_label = 0 
-            s_label = 0
+            h_label = self.last_h_label
+            s_label = self.last_s_label
 
             if name == "p1_1" or name == "p1_2" or name == "p1_3":
                 h_label = id  
