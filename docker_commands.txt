@@ -1,0 +1,12 @@
+
+sudo journalctl -u docker-compose@jetson-zed-ros2-docker.service
+
+sudo date -s "$(wget -qSO- --max-redirect=0 google.com 2>&1 | grep Date: | cut -d' ' -f5-8)Z"
+
+sudo swapoff -a 
+sudo rm -f /var/swapfile
+sudo fallocate -l 8G /var/swapfile
+sudo chmod 600 /var/swapfile
+sudo mkswap /var/swapfile
+sudo swapon /var/swapfile
+echo '/var/swapfile swap swap defaults 0 0' | sudo tee -a /etc/fstab
