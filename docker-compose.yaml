@@ -2,7 +2,7 @@ version: '3'
 services:
     zed-ros2:
         privileged: true
-        image: "olagh/zed_docker:insightface_test"
+        image: "olagh/zed_docker:insightface_deployment"
         ipc: host
         pid: host
         network_mode: host
@@ -13,8 +13,8 @@ services:
             - ROS_DOMAIN_ID=25
 #            - DISPLAY=$DISPLAY
 #            - FASTRTPS_DEFAULT_PROFILES_FILE=/profile/fastrtps_default_profiles.xml
-            - cam_loc=kitchen
-            - tf_topic=zed_kitchen
+            - cam_loc=bed_room
+            - tf_topic=zed_bed_room
             - encoding_loc=/root/ros2_ws/src/
         volumes:
             - /tmp/.X11-unix/:/tmp/.X11-unix
@@ -24,6 +24,9 @@ services:
             - /dev/video0:/dev/video0
             - /dev/video1:/dev/video1
             - /usr/local/zed/resources:/usr/local/zed/resources
+            - /usr/local/zed/settings:/usr/local/zed/settings
+            - /home/jetson/logs:/home/jetson/logs
+            - /home/jetson/results:/home/jetson/results
             - /home/jetson/face_recoginition:/home/jetson/face_recoginition
         tty: true
         command: /tmp/zed_launch.bash
