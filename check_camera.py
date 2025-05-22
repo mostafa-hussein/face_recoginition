@@ -1,7 +1,8 @@
 import cv2
 import pyudev
-
+sdfsdf
 context = pyudev.Context()
+
 print(f'Checking the connected cameras')
 # List all video devices
 usb_id = -1

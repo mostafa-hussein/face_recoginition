@@ -5,11 +5,12 @@ import pickle
 from insightface.app import FaceAnalysis
 
 # Define Directories
-IMAGE_DIR = "database/database"  # Folder containing face images
-DB_FILE = "face_database_lab_2.pkl"  # Output file to store embeddings
+
+IMAGE_DIR = "database"  # Folder containing face images
+DB_FILE = "test2_face_database_lab_2.pkl"  # Output file to store embeddings
 
 # Initialize ArcFace Model
-arcface = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
+arcface = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
 arcface.prepare(ctx_id=0)
 
 # Dictionary to store face embeddings
