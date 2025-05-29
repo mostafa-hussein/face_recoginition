@@ -48,11 +48,11 @@ class ObjectTracker(Node):
             self.objects_callback,
             10)
 
-        self.image_sub = self.create_subscription(
-            Image,
-            f'/zed_{cam}/zed_node_{cam}/left/image_rect_color',
-            self.image_callback,
-            10)
+       # self.image_sub = self.create_subscription(
+           # Image,
+           # f'/zed_{cam}/zed_node_{cam}/left/image_rect_color',
+           # self.image_callback,
+           # 10)
         
         # CvBridge to convert ROS Image to OpenCV
         self.bridge = CvBridge()
@@ -101,9 +101,9 @@ class ObjectTracker(Node):
         
         self.get_logger().info(f'Starting insight face init')
 
-        if self.arcface is None:
-            self.arcface = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
-            self.arcface.prepare(ctx_id=0)
+        #if self.arcface is None:
+           # self.arcface = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
+           # self.arcface.prepare(ctx_id=0)
         
         self.get_logger().info(f'Finished all init')
     
@@ -136,9 +136,9 @@ class ObjectTracker(Node):
 
     def objects_callback(self, msg):
         """Processes detected objects and extracts head positions."""
-        if self.latest_image is None:
-            self.get_logger().warn("No image received yet!")
-            return
+       # if self.latest_image is None:
+           # self.get_logger().warn("No image received yet!")
+           # return
         
         new_body = {}
         for obj in msg.objects:
@@ -284,7 +284,7 @@ class ObjectTracker(Node):
                 color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
                 cv2.rectangle(usb_image, (x1, y1), (x2, y2), color, 2)
                 cv2.putText(usb_image, name, (x1, y1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
-                cv2.imwrite(os.path.join('/home/jetson/face_recoginition/results',f'frame_{id}.jpg'), usb_image)
+                cv2.imwrite(os.path.join('/home/jetson/results',f'frame_{id}.jpg'), usb_image)
 
             if name =="Unknown":
                 return False, name
@@ -332,7 +332,7 @@ class ObjectTracker(Node):
 def main(args=None):
 
     parser = argparse.ArgumentParser(description="ROS2 Object Tracker")
-    parser.add_argument("--db", type=str, default="/home/jetson/face_recoginition/face_database.pkl", help="Name of the database")
+    parser.add_argument("--db", type=str, default="face_database.pkl", help="Name of the database")
     parser.add_argument("--save_image", action="store_true", help="Enable image saving (default: False)")
 
     cli_args = parser.parse_args()  # Parse command-line arguments
