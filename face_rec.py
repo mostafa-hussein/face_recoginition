@@ -80,7 +80,7 @@ class ObjectTracker(Node):
         print (f'Running face deteion and recoiginition')
         self.run()
 
-        if not self.is_protocol_time(8,13):
+        if not self.is_protocol_time(8,12):
             print (f'********The coffee protocol should triger but will not as it is not time for it *******')
             self.last_coffee_label = False
 
@@ -137,10 +137,10 @@ class ObjectTracker(Node):
                 print(f"Face area: {area} px²")
                 cx, cy = (x1 + x2)//2, (y1 + y2)//2
                 name = "target"
-                if cx > 320:
-                    self.coffee_counter +=1
-                else:
-                    self.food_counter +=1
+                # if cx > 320:
+                #     self.coffee_counter +=1
+                # else:
+                #     self.food_counter +=1
 
                 if self.t_prev is None:
                     self.t_prev = tm.time()
@@ -153,10 +153,11 @@ class ObjectTracker(Node):
             # first time seen OR moved too far → reset timer
             if now - self.t_prev >= linger_secs:
                 self.flag_linger = True
-                if self.coffee_counter > self.food_counter:
-                    self.update_labels(coffee=True , food= False)
-                else:
-                    self.update_labels(coffee=False , food= True)
+                self.update_labels(coffee=True , food= True)
+                # if self.coffee_counter > self.food_counter:
+                #     self.update_labels(coffee=True , food= False)
+                # else:
+                #     self.update_labels(coffee=False , food= True)
 
                 print (f'******* coffee counter = {self.coffee_counter}')
                 print (f'******* Food counter = {self.food_counter}')
@@ -172,20 +173,6 @@ class ObjectTracker(Node):
 
         
         print(f'Flag status is ########## {self.flag_linger} ##########')
-        # draw face box + label
-        # cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,0), 2)
-        # cv2.putText(frame, name, (x1, y1-6),
-        #             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
-
-        # # 3️⃣  show flag status -----------------------------------------------------
-        # status_txt = f"LINGER: {self.flag_linger}"
-        # cv2.putText(frame, status_txt, (10,30),
-        #             cv2.FONT_HERSHEY_SIMPLEX, 0.8,
-        #             (0,0,255) if self.flag_linger else (0,255,255), 2)
-
-        # cv2.imshow("Person+Face+Linger", frame)
-        # if cv2.waitKey(1) == 27:      # Esc
-        #     exit(1)
 
 
 def main(args=None):
