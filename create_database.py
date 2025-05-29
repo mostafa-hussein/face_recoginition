@@ -7,7 +7,7 @@ from insightface.app import FaceAnalysis
 # Define Directories
 
 IMAGE_DIR = "database"  # Folder containing face images
-DB_FILE = "test2_face_database_lab_2.pkl"  # Output file to store embeddings
+DB_FILE = "face_database.pkl"  # Output file to store embeddings
 
 # Initialize ArcFace Model
 arcface = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])

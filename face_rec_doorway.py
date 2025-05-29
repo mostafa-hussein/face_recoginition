@@ -149,7 +149,7 @@ class ObjectTracker(Node):
 def main(args=None):
 
     parser = argparse.ArgumentParser(description="ROS2 Object Tracker")
-    parser.add_argument("--db", type=str, default="/home/carl-lab/r1_project/face_recoginition/face_database_lab_2.pkl", help="Name of the database")
+    parser.add_argument("--db", type=str, default="/home/jetson/projects/face_recoginition/face_database_lab_2.pkl", help="Name of the database")
     parser.add_argument("--save_image", action="store_true", help="Enable image saving (default: False)")
 
     cli_args = parser.parse_args()  # Parse command-line arguments
