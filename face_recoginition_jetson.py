@@ -6,8 +6,9 @@ import os
 import rclpy
 import onnxruntime
 import sklearn
+import argparse
 from insightface.app import FaceAnalysis
-
+import pyudev
 from zed_interfaces.msg import ObjectsStamped
 
 from rclpy.node import Node
@@ -23,8 +24,14 @@ from std_msgs.msg import Int32
 cam = os.getenv("cam_loc")
 
 class ObjectTracker(Node):
-    def __init__(self):
+    def __init__(self , database_name = "face_database.pkl" , save_image = False):
         super().__init__('object_tracker')
+
+        self.database = database_name
+        self.save_image = save_image
+
+        self.get_logger().info(f'data base name {self.database}')
+        self.get_logger().info(f'save image set to {self.save_image}')
 
         self.h_label_publisher = self.create_publisher(Int32, f'{cam}_h_label', 10)
         self.s_label_publisher = self.create_publisher(Int32, f'{cam}_s_label', 10)
@@ -41,11 +48,11 @@ class ObjectTracker(Node):
             self.objects_callback,
             10)
 
-        self.image_sub = self.create_subscription(
-            Image,
-            f'/zed_{cam}/zed_node_{cam}/left/image_rect_color',
-            self.image_callback,
-            10)
+       # self.image_sub = self.create_subscription(
+           # Image,
+           # f'/zed_{cam}/zed_node_{cam}/left/image_rect_color',
+           # self.image_callback,
+           # 10)
         
         # CvBridge to convert ROS Image to OpenCV
         self.bridge = CvBridge()
@@ -70,31 +77,39 @@ class ObjectTracker(Node):
 
         # TF2 Broadcaster
         self.tf_broadcaster = TransformBroadcaster(self)
-        print (f'Done array initializations ')
+        self.get_logger().info(f'Done array initializations')
         
         # TF2 buffer and listener
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
+
+        with open(self.database, "rb") as f:
+            self.face_database = pickle.load(f)
+        
+        context = pyudev.Context()
+        self.get_logger().info(f'Checking the connected cameras')
+        # List all video devices
+        self.usb_id = -1
+
+        for device in context.list_devices(subsystem='video4linux'):
+            name = str(device.attributes.get("name"))
+            if "ZED" not in name and "W2G" in name:
+                self.usb_id = int(device.device_node[-1])
+                break
         
         self.arcface = None
         
-        print(f'Finished insight face init')
+        self.get_logger().info(f'Starting insight face init')
 
-        self.cap = cv2.VideoCapture(0)  # USB Camera
-
-        new_width = 1920
-        new_height = 1080
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, new_width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, new_height)
-
-        with open("face_database_lab.pkl", "rb") as f:
-            self.face_database = pickle.load(f)
+        #if self.arcface is None:
+           # self.arcface = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
+           # self.arcface.prepare(ctx_id=0)
         
-        print(f'Finished all init')
+        self.get_logger().info(f'Finished all init')
     
     def update_labels(self, h_label, s_label):
         """Update labels with new values from HeadTracker."""
-        print(f'Labesl have been updated ')
+        self.get_logger().info(f'Labesl have been updated ')
         self.last_h_label = h_label
         self.last_s_label = s_label
         self.continuous_publish()
@@ -108,12 +123,9 @@ class ObjectTracker(Node):
         f_msg = Int32()
         f_msg.data = self.last_s_label
         self.s_label_publisher.publish(f_msg)
-
-        #self.get_logger().info(f"Published (Continuous) -> H_label: {self.last_h_label}, S_label: {self.last_s_label}")
         
     def image_callback(self, msg):
         """Stores the latest image from the left camera."""
-        # self.get_logger().info(f'I am in processing images')
         if self.latest_image is None:
             try:
                 self.latest_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
@@ -124,9 +136,9 @@ class ObjectTracker(Node):
 
     def objects_callback(self, msg):
         """Processes detected objects and extracts head positions."""
-        if self.latest_image is None:
-            self.get_logger().warn("No image received yet!")
-            return
+       # if self.latest_image is None:
+           # self.get_logger().warn("No image received yet!")
+           # return
         
         new_body = {}
         for obj in msg.objects:
@@ -136,8 +148,8 @@ class ObjectTracker(Node):
                 continue  # Ignore if we already processed this ID
             
             head_position = obj.head_position
-            print(f'Head pos size {head_position.shape}')
-            print(f'Head pos size {head_position}')
+            self.get_logger().info(f'Head pos size {head_position.shape}')
+            self.get_logger().info(f'Head pos size {head_position}')
 
 
             transformed_head_position = self.transform_point(head_position)
@@ -184,13 +196,26 @@ class ObjectTracker(Node):
             self.arcface = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
             self.arcface.prepare(ctx_id=0)
         
-        ret, frame = self.cap.read()
+        self.get_logger().info(f'Starting the camera cap and face recoiginiation')
+
+        cap = cv2.VideoCapture(self.usb_id)  # USB Camera
+        new_width = 1920
+        new_height = 1080
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, new_width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, new_height)
+
+        ret, frame = cap.read()
         faces = None
+        face_image = None
         if ret:
             face_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             # Run through ArcFace
             faces = self.arcface.get(np.array(face_image))
         
+        cap.release()
+        
+        self.get_logger().info(f'Finished the camera cap and face recoiginiation')
+
         return faces, face_image
     
     def recognize_face(self,face_embedding, threshold=0.8):
@@ -198,7 +223,7 @@ class ObjectTracker(Node):
         if len(self.face_database) == 0:
             return "Unknown"
         # for name, stored_embedding in self.face_database.items():
-        #     print(name)
+        #     self.get_logger().info(name)
 
         best_match = None
         best_score = float('inf')  # Lower is better
@@ -220,7 +245,7 @@ class ObjectTracker(Node):
             # Transform the point
             point_usb = np.dot(R, point_zed) + T.reshape(3, 1)
             point_usb = point_usb.flatten()
-            print("3D point in USB camera's coordinate system:", point_usb)
+            self.get_logger().info(f"3D point in USB camera's coordinate system:{point_usb}")
             
 
             # Extract camera intrinsics (assumed to be 3x3)
@@ -234,36 +259,37 @@ class ObjectTracker(Node):
             u = int((X * fx / Z) + cx)
             v = int((Y * fy / Z) + cy)
             head_point = np.array([u,v])
-            print("2D image coordinates (u, v):", u, v)
+            self.get_logger().info(f"2D image coordinates (u, v): {u} , {v}")
 
             distance = []
             img_h, img_w = usb_image.shape[:2]
-            if 0 <= u < img_w and 0 <= v < img_h:
-                for face in faces:
-                    x_min, y_min, x_max, y_max = face['bbox']
-                    cx, cy = (x_min + x_max) / 2, (y_min + y_max) / 2
-                    face_center = np.array([cx,cy])
-                    distance.append(np.linalg.norm(head_point - face_center))
-                
-                min_dist_face_id= distance.index(min(distance))
-                
-                name,best_score = self.recognize_face(faces[min_dist_face_id]['embedding'])
+            
+            for face in faces:
+                x_min, y_min, x_max, y_max = face['bbox']
+                cx, cy = (x_min + x_max) / 2, (y_min + y_max) / 2
+                face_center = np.array([cx,cy])
+                distance.append(np.linalg.norm(head_point - face_center))
+            
+            min_dist_face_id= distance.index(min(distance))
+            
+            name,best_score = self.recognize_face(faces[min_dist_face_id]['embedding'])
 
-                bbox = faces[min_dist_face_id]['bbox']
+            bbox = faces[min_dist_face_id]['bbox']
 
-                print(f'best score {best_score} , for: {name}')
+            self.get_logger().info(f'best score {best_score} , for: {name}')
+
+            if self.save_image:
                 x1, y1, x2, y2 = map(int, bbox)
                 # Draw bounding box & label
                 color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
                 cv2.rectangle(usb_image, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(usb_image, name, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+                cv2.putText(usb_image, name, (x1, y1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+                cv2.imwrite(os.path.join('/home/jetson/results',f'frame_{id}.jpg'), usb_image)
 
-                cv2.imwrite(os.path.join('results',f'frame_{id}.jpg'), usb_image)
-
-                return True, name
-            else:
-                print (f'Face point is out of boundry')
+            if name =="Unknown":
                 return False, name
+            return True, name
+
 
     def process_new_object(self, id ,head):
         """Process and save the detected object's head image."""
@@ -278,20 +304,21 @@ class ObjectTracker(Node):
             self.get_logger().info(f'No face detected for (ID {id})')
             return False
          
-        print(f'Number of faces detected {len(faces)}')
+        self.get_logger().info(f'Number of faces detected {len(faces)}')
         face_recoginized,name  = self.get_usb_with_3d_heads(face_image, faces, head, self.R, self.T, self.usb_intrinsics)
 
         if face_recoginized:
-            print (f'We found a match for the body_id {id}')
+            self.get_logger().info(f'We found a match for the body_id {id}')
 
             """Process data and publish closest head & face labels."""
             h_label = self.last_h_label
             s_label = self.last_s_label
 
-            if name == "p1_1" or name == "p1_2" or name == "p1_3":
+            name = name.split("_")[0]
+            if name == "p1" or name == "p3":
                 h_label = id  
             
-            elif name == "p2_1" or name == "p2_2" or name == "p2_3":
+            elif name == "p2"  or name == "p4":
                 s_label = id  
 
             # Update publisher with the new values
@@ -299,21 +326,26 @@ class ObjectTracker(Node):
 
             return True
         
-        print (f'!!!!!!!!!!! No match found for the body_id {id}')
+        self.get_logger().info(f'!!!!!!!!!!! No match found for the body_id {id}')
         return False 
 
 def main(args=None):
-    rclpy.init(args=args)
 
+    parser = argparse.ArgumentParser(description="ROS2 Object Tracker")
+    parser.add_argument("--db", type=str, default="face_database.pkl", help="Name of the database")
+    parser.add_argument("--save_image", action="store_true", help="Enable image saving (default: False)")
+
+    cli_args = parser.parse_args()  # Parse command-line arguments
+    
+    rclpy.init(args=args)
    
     # Create subscriber (HeadTracker) and pass the publisher reference
-    tracker = ObjectTracker()
+    tracker = ObjectTracker(database_name=cli_args.db , save_image = cli_args.save_image)
 
     rclpy.spin(tracker)
 
     tracker.destroy_node()
     rclpy.shutdown()
-    tracker.cap.release()
 
 if __name__ == '__main__':
     main()
