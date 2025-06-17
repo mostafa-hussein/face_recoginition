@@ -1,0 +1,5 @@
+sudo apt install terminator
+sudo apt update && sudo apt upgrade -y
+sudo apt install python3-pip
+sudo apt install libatlas-base-dev
+sudo apt install python3-opencv
