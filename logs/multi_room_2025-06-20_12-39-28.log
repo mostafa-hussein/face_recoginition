@@ -1,0 +1,6 @@
+2025-06-20 12:39:28,775 | INFO | 🔁 System initialized with cameras: {'LivingRoom': 5005, 'Kitchen': 5006, 'Bedroom': 5007, 'Doorway': 5008}
+2025-06-20 12:39:28,775 | INFO | [INIT] Loaded face database with 23 entries
+2025-06-20 12:39:29,481 | INFO | [FACE] Matched p3 in Kitchen with distance 0.66
+2025-06-20 12:39:29,512 | INFO | [FACE] Matched p3 in Doorway with distance 0.68
+2025-06-20 12:39:29,620 | INFO | [FACE] Matched p3 in Kitchen with distance 0.66
+2025-06-20 12:39:29,643 | INFO | [FACE] Matched p3 in Doorway with distance 0.66

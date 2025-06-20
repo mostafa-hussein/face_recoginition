@@ -1,6 +1,16 @@
 # nano_people_yolo11.py
 import cv2, time, numpy as np
 from ultralytics import YOLO
+import socket
+
+
+UDP_IP = "0.0.0.0"
+UDP_PORT = 5007
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind((UDP_IP, UDP_PORT))
+buffer = b""
+
+
 
 # ── load latest lightweight model (YOLO 11-nano) ───────────────────────────────
 # The first run downloads 'yolo11n.pt' automatically.
@@ -8,14 +18,25 @@ model = YOLO("yolo11n.pt")
 model.fuse()                                    # small speed boost
 
 # ── open USB camera ────────────────────────────────────────────────────────────
-cap = cv2.VideoCapture(0)                       # /dev/video0
-cap.set(cv2.CAP_PROP_FPS, 10)                   # target ≈10 FPS
+# cap = cv2.VideoCapture(0)                       # /dev/video0
+# cap.set(cv2.CAP_PROP_FPS, 10)                   # target ≈10 FPS
 
-while cap.isOpened():
+while True:
     t0 = time.time()
-    ok, frame = cap.read()
-    if not ok:
-        break
+
+    # ok, frame = cap.read()
+    # if not ok:
+    #     break
+
+    packet, addr = sock.recvfrom(65536)
+    buffer += packet
+
+    # Try decoding the buffer
+    img_array = np.frombuffer(buffer, dtype=np.uint8)
+    frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+    if frame is not None:
+        buffer = b""  # Reset after successful frame
 
     # ── run inference (persons only = class 0 on COCO) ────────────────────────
     res = model(frame, imgsz=640, conf=0.4, classes=[0], device=0)[0]
@@ -34,5 +55,5 @@ while cap.isOpened():
     # regulate ~10 FPS
     time.sleep(max(0, 0.1 - (time.time() - t0)))
 
-cap.release()
+# cap.release()
 cv2.destroyAllWindows()
