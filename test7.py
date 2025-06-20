@@ -203,8 +203,8 @@ class MultiRoomPersonTracker(Node):
                 cv2.putText(grid, status, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
                 y_offset += 20
 
-        cv2.imshow("Multi-Room Person Tracker", grid)
-        cv2.waitKey(1)
+        # cv2.imshow("Multi-Room Person Tracker", grid)
+   
         for person_id in self.target_person_ids:
             self.publish_location(person_id)
 

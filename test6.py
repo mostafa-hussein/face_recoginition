@@ -28,7 +28,13 @@ class MultiRoomPersonTracker(Node):
                        for room in cam_ports}
 
         # Tracking + Models
-        self.trackers = {room: DeepSort(max_age=10 , embedder='mobilenet' ) for room in cam_ports}
+        self.trackers = {room: DeepSort(
+            max_age=15,
+            embedder='mobilenet',
+            max_cosine_distance=0.3,
+            nn_budget=100
+        ) for room in cam_ports}
+
         self.model = YOLO('yolo11n.pt')
         self.face_app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
         self.face_app.prepare(ctx_id=0)
@@ -57,11 +63,19 @@ class MultiRoomPersonTracker(Node):
         os.makedirs('logs', exist_ok=True)
         self.logger = logging.getLogger("MultiRoomTracker")
         self.logger.setLevel(logging.INFO)
-        handler = RotatingFileHandler("logs/multi_room.log", maxBytes=5*1024*1024, backupCount=3)
         formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
-        self.logger.info("🔁 System initialized with cameras: " + str(self.cam_ports))
+        
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        self.logger.addHandler(stream_handler)
+        
+        timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+        log_file = os.path.join("logs", f"multi_room_{timestamp}.log")
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(formatter)
+        self.logger.addHandler(file_handler)
+        
+        self.logger.info(f"🔁 System initialized with cameras: {self.cam_ports}")
 
     def _load_target_embedding(self, img_path):
         import pickle
@@ -126,7 +140,10 @@ class MultiRoomPersonTracker(Node):
                         tx1, ty1, tx2, ty2 = map(int, track.to_ltrb())
                         track_id = track.track_id
                         # Check if face is inside track box
-                        if fx1 >= tx1 and fy1 >= ty1 and fx2 <= tx2 and fy2 <= ty2:
+                        fcx, fcy = (fx1+fx2)/2, (fy1+fy2)/2              # face centre
+                        
+                        inside = (tx1 <= fcx <= tx2) and (ty1 <= fcy <= ty2)
+                        if inside:
                             track_embedding = track.get_feature()
                             self.target_track_embedding = track_embedding
                             self.room_global_id_map[room][track.track_id] = "PersonA"
@@ -150,7 +167,7 @@ class MultiRoomPersonTracker(Node):
                 if track_embedding is not None:
                     dist = cosine(track_embedding, self.target_track_embedding)
                     if dist < 0.5:
-                        print(f"[REID] Track ID {track_id} matched with distance {dist:.4f}")
+                        # print(f"[REID] Track ID {track_id} matched with distance {dist:.4f}")
                         self.room_global_id_map[room][track_id] = "PersonA"
                         self.person_locations["PersonA"] = {"room": room, "last_seen": time.time()}
                         self.person_at = room
@@ -164,7 +181,7 @@ class MultiRoomPersonTracker(Node):
         msg = String()
         msg.data = f"{room}"
         self.publisher.publish(msg)
-        self.logger.info(f"[ROS] Published location → {msg.data}")
+        # self.logger.info(f"[ROS] Published location → {msg.data}")
 
     def run_display(self):
         while True:
