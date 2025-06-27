@@ -20,8 +20,8 @@ def init_camera(index):
     return cap
 
 # UDP setup
-UDP_IP = "10.21.128.113"
-UDP_PORT = 5007
+UDP_IP = "192.168.50.151"
+UDP_PORT = 5009
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 max_packet_size = 60000
 
