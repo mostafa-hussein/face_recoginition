@@ -1,6 +1,7 @@
 import socket, threading, time, os, logging
 from collections import defaultdict
 import numpy as np
+import pickle
 import cv2
 from ultralytics import YOLO
 from deep_sort_realtime.deepsort_tracker import DeepSort
@@ -9,16 +10,36 @@ from scipy.spatial.distance import cosine
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-from logging.handlers import RotatingFileHandler
+from std_msgs.msg import Int32
 
+import requests
+from datetime import datetime
 
 class MultiRoomPersonTracker(Node):
-    def __init__(self, cam_ports, target_image_path, display_size=(320, 240), ros_topic='person_at'):
+    def __init__(self, cam_ports, database_path, display_size=(320, 240), ros_topic='person_location'):
+        super().__init__('multi_room_tracker')
+        self.url = "http://192.168.50.97/json?request=getstatus"
+        ## 22 open 23 closed (doors)
+        ## 8 motion detected (motion sensors)
+        # Mapping door names to reference IDs
+        self.sensor_refs = {
+            "main_door": 74,
+            "bathroom_door": 6,
+            "motion_bedroom": 68, # ms1
+        }
+
+        self.states = {
+            "main_door": False,
+            "bathroom_door": False,
+            "motion_bedroom": False,
+        }
+        self.sensor_state = self.states.copy()
+
         self.target_track_embedding = None  # For ReID
         self.last_face_id_time = 0
         self.face_recheck_interval = 1  # seconds
         self.person_at = "living_room"
-        super().__init__('multi_room_tracker')
+        self.pam_at = "living_room"
 
         # Config
         self.cam_ports = cam_ports
@@ -31,11 +52,10 @@ class MultiRoomPersonTracker(Node):
         self.trackers = {room: DeepSort(
             max_age=15,
             embedder='torchreid',
-            embedder_model_name='osnet_x1_0',
+            embedder_model_name='osnet_x0_25',
             embedder_gpu=True,
-            n_init=3,
-            max_cosine_distance=0.3,
-            nn_budget=100
+            max_cosine_distance=0.2,
+            nn_budget=50
         ) for room in cam_ports}
 
         self.model = YOLO('yolo11n.pt')
@@ -50,10 +70,11 @@ class MultiRoomPersonTracker(Node):
         self._setup_logger()
 
         # Face embedding
-        self.target_embedding = self._load_target_embedding(target_image_path)
+        self._load_target_embedding(database_path)
 
         # ROS2 publisher
         self.publisher = self.create_publisher(String, self.ros_topic, 10)
+        self.pam_publisher = self.create_publisher(Int32, "pam_location", 10)
 
         # Start camera threads
         for room, port in self.cam_ports.items():
@@ -61,6 +82,44 @@ class MultiRoomPersonTracker(Node):
 
         # Start UI loop
         self.run_display()
+    
+
+    def log_change(self, sensor_name: str, new_value: bool):
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        if "door" in sensor_name:
+            status = "open" if new_value else "closed"
+        else:  # motion sensors
+            status = "motion detected" if new_value else "no motion"
+
+        log_line = f"{now} - Changed to: {status}\n"
+        filename = f"{sensor_name}.log"
+        self.logger.info(f"sensor {sensor_name}: {now} - Changed to: {status}")
+        with open(filename, "a") as f:
+            f.write(log_line)
+            
+    def check_doors(self):
+        try:
+            response = requests.get(self.url)
+            data = response.json()
+        except Exception as e:
+            self.logger.info(f"Failed to get sensor data: {e}")
+            return
+
+        devices = data.get("Devices", [])
+        for device in devices:
+            ref = device.get("ref")
+            value = device.get("value")  # Extract the numeric status
+            for sensor_name, sensor_ref in self.sensor_refs.items():
+                if ref == sensor_ref:
+                    if "door" in sensor_name:
+                        current_val = (value == 22)
+                    else:  # motion sensors
+                        current_val = (value == 8)
+
+                    if self.sensor_state[sensor_name] != current_val:
+                        self.log_change(sensor_name, current_val)
+                        self.sensor_state[sensor_name] = current_val
 
     def _setup_logger(self):
         os.makedirs('logs', exist_ok=True)
@@ -80,9 +139,8 @@ class MultiRoomPersonTracker(Node):
         
         self.logger.info(f"🔁 System initialized with cameras: {self.cam_ports}")
 
-    def _load_target_embedding(self, img_path):
-        import pickle
-        with open("face_database_lab_2.pkl", "rb") as f:
+    def _load_target_embedding(self, database_path):
+        with open(database_path, "rb") as f:
             self.face_database = pickle.load(f)
         self.logger.info("[INIT] Loaded face database with {} entries".format(len(self.face_database)))
         return None  # Not used directly anymore
@@ -93,11 +151,13 @@ class MultiRoomPersonTracker(Node):
 
         for name, emb_db in self.face_database.items():
             short_name = name.split("_")[0]
-            if short_name in ["p1", "p3"]:
-                dist = cosine(embedding, emb_db)
-                if dist < thr:
-                    return True, dist
-        return False, 1.0
+            dist = cosine(embedding, emb_db)
+            if dist < thr:
+                if short_name in ["p1","p3"]:
+                    return "bill", dist
+                elif short_name in ["p3","p4"]:
+                    return "pam", dist
+        return "unknown", 1.0
 
     def receive_stream(self, room, port):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -138,8 +198,13 @@ class MultiRoomPersonTracker(Node):
             #     self.logger.info(f"[FACE] Detected {len(faces)} faces in {room}")
             for face in faces:
                 fx1, fy1, fx2, fy2 = map(int, face.bbox)
-                match, dist = self.is_same_person(face.embedding)
-                if match:
+                name, dist = self.is_same_person(face.embedding)
+                if name == "pam":
+                    self.pam_at = room
+                    pam_room = self.adjust_room_name(room)
+                    self.pam_at = pam_room
+
+                if name =="bill":
                     self.last_face_id_time = time_now
                     self.logger.info(f"[FACE] Matched target face with distance {dist:.2f}")
                     # Try to associate with track
@@ -150,12 +215,15 @@ class MultiRoomPersonTracker(Node):
                         track_id = track.track_id
                         # Check if face is inside track box
                         fcx, fcy = (fx1+fx2)/2, (fy1+fy2)/2              # face centre
-                        
                         inside = (tx1 <= fcx <= tx2) and (ty1 <= fcy <= ty2)
                         if inside:
                             track_embedding = track.get_feature()
                             self.target_track_embedding = track_embedding
                             self.room_global_id_map[room][track.track_id] = "PersonA"
+                            # Update person location
+                            
+                            self.person_at = room
+                            room = self.adjust_room_name(room)
                             self.person_locations["PersonA"] = {"room": room, "last_seen": time.time()}
                             self.person_at = room
                             self.logger.info(f"[ASSOC] Linked track ID {track.track_id} to PersonA via face match")
@@ -175,33 +243,72 @@ class MultiRoomPersonTracker(Node):
                 track_embedding = track.get_feature()
                 if track_embedding is not None:
                     dist = cosine(track_embedding, self.target_track_embedding)
-                    if dist < 0.15:
-                        print(f"[REID] Track ID {track_id} matched with distance {dist:.4f}")
+                    if dist < 0.2:
+                        # print(f"[REID] Track ID {track_id} matched with distance {dist:.4f}")
                         self.room_global_id_map[room][track_id] = "PersonA"
+                        
+                        self.person_at = room
+                        room = self.adjust_room_name(room)
                         self.person_locations["PersonA"] = {"room": room, "last_seen": time.time()}
                         self.person_at = room
+
             global_id = self.room_global_id_map[room].get(track_id, "Unknown")
             cv2.rectangle(annotated, (l, t), (r, b), (255, 0, 0), 2)
             cv2.putText(annotated, f"{global_id} (ID {track_id})", (l, t - 5),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
-        # print(f"Done processing frame from {room}")
-        return annotated
+        
+        if self.sensor_state["main_door"] and (self.person_at == "outside" or self.person_at == "Doorway"):
+            room = "outside"
+            self.person_locations["PersonA"] = {"room": room, "last_seen": time.time()}
+            self.person_at = room
+        elif self.sensor_state["motion_bedroom"] and (self.person_at == "bedroom" or self.person_at == "BedRoom_way"):
+            room = "bedroom"
+            self.person_locations["PersonA"] = {"room": room, "last_seen": time.time()}
+            self.person_at = room
 
+        return annotated
+    
+    def adjust_room_name(self, room):
+        
+        if self.sensor_state["main_door"] and (room == "Doorway" or self.person_at == "outside" or self.person_at == "Doorway"):
+            room = "outside"
+        elif self.sensor_state["motion_bedroom"] and (room == "BedRoom_way" or self.person_at == "bedroom" or self.person_at == "BedRoom_way"):
+            room = "bedroom"
+        return room
+    
     def publish_location(self,room):
         msg = String()
-        msg.data = f"{room}"
+        if room == "outside" or  room == "bedroom":
+            actual_room = room
+        else:
+            actual_room = "living_room"
+        msg.data = f"{actual_room}"
         self.publisher.publish(msg)
-        # self.logger.info(f"[ROS] Published location → {msg.data}")
+
+        msg = Int32()
+        if self.sensor_state["main_door"] and self.person_at == "doorway":
+            self.pam_at = "outside"
+            data = 1
+        elif self.pam_at == "outside":
+            data = 1
+        else:
+            data = 0
+
+        msg.data = data
+        self.pam_publisher.publish(msg)
 
     def run_display(self):
         while True:
+            self.check_doors()
             annotated_frames = {
                 room: self.process_frame(room, frame)
                 for room, frame in self.frames.items()
             }
             try:
-                top = np.hstack((annotated_frames["Living_Room"], annotated_frames["Dining_Room"]))
-                bottom = np.hstack((annotated_frames["BedRoom"], annotated_frames["Doorway"]))
+                top = np.hstack((annotated_frames["living_room"], annotated_frames["Dining_Room"]))
+                bottom = np.hstack((annotated_frames["BedRoom_way"], annotated_frames["tv_room"]))
+                bottom1 = np.hstack(annotated_frames["tv_room"])
+
                 grid = np.vstack((top, bottom))
             except Exception as e:
                 self.logger.error(f"[ERROR] Failed to create display grid: {e}")
@@ -221,30 +328,31 @@ class MultiRoomPersonTracker(Node):
                 break
 
             self.publish_location(self.person_at)
-        cv2.destroyAlqlWindows()
+        cv2.destroyAllWindows()
 
 
 def main():
     rclpy.init()
-    if 1:
+    try:
         cam_ports = {
-            "Living_Room": 5005,
-            "BedRoom": 5006,
+            "living_room": 5005,
+            "BedRoom_way": 5006,
             "Dining_Room": 5007,
-            "Doorway": 5008
+            "Doorway": 5008,
+            "tv_room": 5009,
         }
         tracker_node = MultiRoomPersonTracker(
             cam_ports=cam_ports,
-            target_image_path="face_database/target.jpg",
+            database_path="/home/mostafa/projects/face_recoginition/face_database_lab_2.pkl",
             display_size=(640, 480),
-            ros_topic='person_at'
+            ros_topic='person_location'
         )
         rclpy.spin(tracker_node)  # ✅ Keeps ROS2 node alive
 
-    # except Exception as e:
-    #     print("[ERROR] Initialization failed:", e)
-    # finally:
-    #     rclpy.shutdown()
+    except Exception as e:
+        print("[ERROR] Initialization failed:", e)
+    finally:
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":

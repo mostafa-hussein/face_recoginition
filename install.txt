@@ -62,3 +62,11 @@ sudo systemctl status camera_stream.service
 
 tail -f /var/log/camera_stream.log
 
+
+sudo apt install netplan.io
+
+nmcli device wifi list
+
+sudo nmcli device wifi connect "muller_house" password "r1project" ifname wlan0
+
+sudo nmcli device wifi connect "r1_5G-1" password "r1project" ifname wlan0

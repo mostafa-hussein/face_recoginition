@@ -13,7 +13,7 @@ CAM_PORTS = {
 }
 
 MAX_PACKET_SIZE = 65536
-DISPLAY_SIZE = (320, 240)  # Resize each camera feed for 2x2 display
+DISPLAY_SIZE = (640, 480)  # Resize each camera feed for 2x2 display
 
 # Shared frame dictionary
 frames = {room: np.zeros((DISPLAY_SIZE[1], DISPLAY_SIZE[0], 3), dtype=np.uint8) for room in CAM_PORTS}
