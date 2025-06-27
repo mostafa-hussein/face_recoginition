@@ -37,7 +37,7 @@ class MultiRoomPersonTracker(Node):
 
         self.target_track_embedding = None  # For ReID
         self.last_face_id_time = 0
-        self.face_recheck_interval = 1  # seconds
+        self.face_recheck_interval = 0.5  # seconds
         self.person_at = "living_room"
         self.pam_at = "living_room"
 
@@ -74,7 +74,7 @@ class MultiRoomPersonTracker(Node):
 
         # ROS2 publisher
         self.publisher = self.create_publisher(String, self.ros_topic, 10)
-        self.pam_publisher = self.create_publisher(Int32, "pam_location", 10)
+        self.pam_publisher = self.create_publisher(Int32, "pam_outside", 10)
 
         # Start camera threads
         for room, port in self.cam_ports.items():
@@ -153,9 +153,9 @@ class MultiRoomPersonTracker(Node):
             short_name = name.split("_")[0]
             dist = cosine(embedding, emb_db)
             if dist < thr:
-                if short_name in ["p1","p3"]:
+                if short_name in ["p1"]:
                     return "bill", dist
-                elif short_name in ["p3","p4"]:
+                elif short_name in ["p3"]:
                     return "pam", dist
         return "unknown", 1.0
 
@@ -203,6 +203,9 @@ class MultiRoomPersonTracker(Node):
                     self.pam_at = room
                     pam_room = self.adjust_room_name(room)
                     self.pam_at = pam_room
+                    cv2.rectangle(annotated, (fx1, fy1), (fx2, fy2), (0, 255, 255), 2)
+                    cv2.putText(annotated, f"Pam", (fx1, fy1 - 5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
 
                 if name =="bill":
                     self.last_face_id_time = time_now
@@ -230,7 +233,7 @@ class MultiRoomPersonTracker(Node):
                             cv2.rectangle(annotated, (fx1, fy1), (fx2, fy2), (0, 255, 255), 2)
                             cv2.putText(annotated, f" PersonA (ID {track_id})", (tx1, ty1 - 5),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
-                            return annotated
+                            break
     
         for track in tracks:
             if not track.is_confirmed():
@@ -286,7 +289,7 @@ class MultiRoomPersonTracker(Node):
         self.publisher.publish(msg)
 
         msg = Int32()
-        if self.sensor_state["main_door"] and self.person_at == "doorway":
+        if self.sensor_state["main_door"] and self.pam_at == "Doorway":
             self.pam_at = "outside"
             data = 1
         elif self.pam_at == "outside":
