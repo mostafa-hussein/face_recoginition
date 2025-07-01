@@ -18,26 +18,26 @@ from datetime import datetime
 class MultiRoomPersonTracker(Node):
     def __init__(self, cam_ports, database_path, display_size=(320, 240), ros_topic='person_location'):
         super().__init__('multi_room_tracker')
-        self.url = "http://192.168.50.97/json?request=getstatus"
+        self.url = "http://192.168.50.69/json?request=getstatus"
         ## 22 open 23 closed (doors)
         ## 8 motion detected (motion sensors)
         # Mapping door names to reference IDs
         self.sensor_refs = {
             "main_door": 74,
-            "bathroom_door": 6,
+            "back_door": 6,
             "motion_bedroom": 68, # ms1
         }
 
         self.states = {
             "main_door": False,
-            "bathroom_door": False,
+            "back_door": False,
             "motion_bedroom": False,
         }
         self.sensor_state = self.states.copy()
 
         self.target_track_embedding = None  # For ReID
         self.last_face_id_time = 0
-        self.face_recheck_interval = 0.5  # seconds
+        self.face_recheck_interval = 1  # seconds
         self.person_at = "living_room"
         self.pam_at = "living_room"
 
@@ -51,8 +51,8 @@ class MultiRoomPersonTracker(Node):
         # Tracking + Models
         self.trackers = {room: DeepSort(
             max_age=15,
-            embedder='torchreid',
-            embedder_model_name='osnet_x0_25',
+            embedder="mobilenet",
+            # embedder_model_name='osnet_x0_25',
             embedder_gpu=True,
             max_cosine_distance=0.2,
             nn_budget=50
@@ -307,44 +307,44 @@ class MultiRoomPersonTracker(Node):
                 room: self.process_frame(room, frame)
                 for room, frame in self.frames.items()
             }
-            try:
-                top = np.hstack((annotated_frames["living_room"], annotated_frames["Dining_Room"], annotated_frames["tv_room"] ))
-                bottom = np.hstack((annotated_frames["BedRoom_way"], annotated_frames["Doorway"],annotated_frames["tv_room"] ))
+            # try:
+            #     top = np.hstack((annotated_frames["living_room"], annotated_frames["Dining_Room"], annotated_frames["tv_Room"] ))
+            #     bottom = np.hstack((annotated_frames["BedRoom_way"], annotated_frames["Doorway"],annotated_frames["tv_Room"] ))
 
-                grid = np.vstack((top, bottom ))
-            except Exception as e:
-                self.logger.error(f"[ERROR] Failed to create display grid: {e}")
-                return  
+            #     grid = np.vstack((top, bottom ))
+            # except Exception as e:
+            #     self.logger.error(f"[ERROR] Failed to create display grid: {e}")
+            #     return  
             
-            y_offset = 10
-            for person, info in self.person_locations.items():
-                if time.time() - info["last_seen"] < 5:
-                    status = f"{person} is in {info['room']} (seen {int(time.time() - info['last_seen'])}s ago)"
-                    cv2.putText(grid, status, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-                    y_offset += 20
+            # y_offset = 10
+            # for person, info in self.person_locations.items():
+            #     if time.time() - info["last_seen"] < 5:
+            #         status = f"{person} is in {info['room']} (seen {int(time.time() - info['last_seen'])}s ago)"
+            #         cv2.putText(grid, status, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            #         y_offset += 20
             
-            grid_small = cv2.resize(grid, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
-            cv2.imshow("Multi-Room Person Tracker", grid_small)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+            # grid_small = cv2.resize(grid, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+            # cv2.imshow("Multi-Room Person Tracker", grid_small)
+            # if cv2.waitKey(1) & 0xFF == ord('q'):
+            #     break
 
             self.publish_location(self.person_at)
-        cv2.destroyAllWindows()
+        # cv2.destroyAllWindows()
 
 
 def main():
     rclpy.init()
     try:
         cam_ports = {
-            "living_room": 5005,
+            "Doorway": 5005,
             "BedRoom_way": 5006,
-            "Dining_Room": 5007,
-            "Doorway": 5008,
-            "tv_room": 5009,
+            "living_room": 5007,
+            "tv_Room": 5008,
+            "Dining_Room": 5009
         }
         tracker_node = MultiRoomPersonTracker(
             cam_ports=cam_ports,
-            database_path="/home/mostafa/projects/face_recoginition/face_database_lab_2.pkl",
+            database_path="/home/mostafa/projects/face_recoginition/face_database_mueller.pkl",
             display_size=(640, 480),
             ros_topic='person_location'
         )

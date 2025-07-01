@@ -6,10 +6,11 @@ import time
 
 # Configuration
 CAM_PORTS = {
-    "LivingRoom": 5005,
-    "Kitchen": 5006,
-    "Bedroom": 5007,
-    "Doorway": 5008
+    # "Doorway": 5005,
+    # "Kitchen": 5006,
+    # "Bedroom": 5009,
+    # "Doorway": 5008,
+    "LivingRoom": 5007  # For testing purposes
 }
 
 MAX_PACKET_SIZE = 65536
@@ -33,19 +34,21 @@ def receive_stream(room_name, port):
                 np_data = np.frombuffer(buffer, dtype=np.uint8)
                 frame = cv2.imdecode(np_data, cv2.IMREAD_COLOR)
                 buffer = bytearray()
-
+                print(f"[INFO] Decoded frame from {room_name} on port {port}")
                 if frame is not None:
                     frames[room_name] = cv2.resize(frame, DISPLAY_SIZE)
+                    print(f"[INFO] Received frame from {room_name} on port {port}")
         except Exception as e:
             print(f"[ERROR] in {room_name} thread: {e}")
 
 def show_all_streams():
     while True:
         # Combine 4 frames into a 2x2 grid
-        top_row = np.hstack((frames["LivingRoom"], frames["Kitchen"]))
-        bottom_row = np.hstack((frames["Bedroom"], frames["Doorway"]))
-        grid = np.vstack((top_row, bottom_row))
+        # top_row = np.hstack((frames["LivingRoom"], frames["Kitchen"]))
+        # bottom_row = np.hstack((frames["Bedroom"], frames["Doorway"]))
+        # grid = np.vstack((top_row, bottom_row))
 
+        grid = frames["LivingRoom"]
         cv2.imshow("Multi-Room View", grid)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
