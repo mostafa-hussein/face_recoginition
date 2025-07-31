@@ -103,13 +103,17 @@ class ObjectTracker(Node):
         #     self.chose_protocol = False
 
         if self.is_protocol_time(10,17):
+            print("In protocol time,will check last time")
             if self.last_h_label:
                 now = datetime.now()
-                if (now - self.last_time) > timedelta(minutes=20):
+                if (now - self.last_time) > timedelta(minutes=30):
+                    print("Sending message to server as both conditions are met")
                     self.last_time = datetime.now()
                     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                         s.connect((SERVER_IP, PORT))
                         s.sendall(MESSAGE.encode('utf-8'))
+        else:
+            print("Not in protocol time, not sending message")
             
         print (f'I am publishing Now with {self.last_h_label}')
         h_msg = Bool()
@@ -173,7 +177,7 @@ class ObjectTracker(Node):
 def main(args=None):
 
     parser = argparse.ArgumentParser(description="ROS2 Object Tracker")
-    parser.add_argument("--db", type=str, default="/home/jetson/face_recoginition/face_database.pkl", help="Name of the database")
+    parser.add_argument("--db", type=str, default="/home/jetson/projects/testing/face_recoginition/face_database_lab_2.pkl", help="Name of the database")
     parser.add_argument("--save_image", action="store_true", help="Enable image saving (default: False)")
 
     cli_args = parser.parse_args()  # Parse command-line arguments
