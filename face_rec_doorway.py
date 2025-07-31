@@ -8,15 +8,14 @@ import sklearn
 import argparse
 from insightface.app import FaceAnalysis
 import pyudev
-import time
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import Bool  
 import socket
-from datetime import datetime, time
+from datetime import datetime, time , timedelta
 
 SERVER_IP = '192.168.50.95' # Jetson’s address
-PORT = 65432
+PORT = 65433
 # MESSAGE = "Hi Dad. Are you going out? ... Make sure you wear your sneakers."
 MESSAGE = "true" # If sent "true" string, it will play pre-recorded audio
 
@@ -30,7 +29,10 @@ class ObjectTracker(Node):
         self.save_image = save_image
         self.last_h_label = False
         self.found_count = 0
-        self.choose_protocol = False
+        self.chose_protocol = False
+        self.last_time = datetime.now()
+
+
 
         self.get_logger().info(f'data base name {self.database}')
         self.get_logger().info(f'save image set to {self.save_image}')
@@ -68,6 +70,25 @@ class ObjectTracker(Node):
         self.get_logger().info(f'Finished all init')
         # self.run()
     
+    def restart_camera(self):
+        self.cap.release()
+        
+        context = pyudev.Context()
+        self.get_logger().info(f'Checking the connected cameras')
+        # List all video devices
+        self.usb_id = -1
+
+        for device in context.list_devices(subsystem='video4linux'):
+            name = str(device.attributes.get("name"))
+            if "ZED" not in name and "W2G" in name:
+                self.usb_id = int(device.device_node[-1])
+                print(f'Camera Id = {self.usb_id}')
+                break
+
+        self.cap = cv2.VideoCapture(self.usb_id)
+        self.cap.set(cv2.CAP_PROP_FPS, 10)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
     def update_labels(self, h_label):
         """Update labels with new values from HeadTracker."""
         self.get_logger().info(f'Labesl have been updated to {h_label}')
@@ -78,15 +99,17 @@ class ObjectTracker(Node):
         print (f'Running face deteion and recoiginition')
         self.run()
         
-        if self.is_protocol_time(1,2):
-            self.choose_protocol = False
+        # if self.is_protocol_time(1,2):
+        #     self.chose_protocol = False
 
-        if self.is_protocol_time(11,17):
-            if not self.choose_protocol and self.last_h_label:
-                self.choose_protocol = True
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.connect((SERVER_IP, PORT))
-                    s.sendall(MESSAGE.encode('utf-8'))
+        if self.is_protocol_time(10,17):
+            if self.last_h_label:
+                now = datetime.now()
+                if (now - self.last_time) > timedelta(minutes=20):
+                    self.last_time = datetime.now()
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.connect((SERVER_IP, PORT))
+                        s.sendall(MESSAGE.encode('utf-8'))
             
         print (f'I am publishing Now with {self.last_h_label}')
         h_msg = Bool()
@@ -121,14 +144,17 @@ class ObjectTracker(Node):
         ok, frame = self.cap.read()
         if not ok:
             print (f'****problem with the camera capture****')
+            self.restart_camera()
             return
         faces = self.arcface.get(frame)
         name = "unknown"
+        print (f'I am done with face detection and recognition, found {len(faces)} faces')
         for f in faces:
             x1, y1, x2, y2 = map(int, f.bbox)
             cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,0), 2)
             if self.match_face(f.embedding):
                 name = "target"
+                print(f"Found target face matched : {name} ")
                 self.found_count +=1
                 cv2.putText(frame, name, (x1, y1-6),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
@@ -136,20 +162,18 @@ class ObjectTracker(Node):
                 
         if name =="target":
             # first time seen OR moved too far → reset timer
-            if self.found_count > 4:
+            if self.found_count > 2:
+                print(f'Found target face {self.found_count} times')
                 self.update_labels(True)
         else:
             self.found_count = 0
             self.update_labels(False)
 
-        # 3️⃣  show flag status -----------------------------------------------------
-        # cv2.imwrite(os.path.join('/home/jetson/face_recoginition/results',f'frame_{id}.jpg'), frame)
-        # cv2.imshow("Person+Face+Linger", frame)
 
 def main(args=None):
 
     parser = argparse.ArgumentParser(description="ROS2 Object Tracker")
-    parser.add_argument("--db", type=str, default="/home/carl-lab/r1_project/face_recoginition/face_database_lab_2.pkl", help="Name of the database")
+    parser.add_argument("--db", type=str, default="/home/jetson/face_recoginition/face_database.pkl", help="Name of the database")
     parser.add_argument("--save_image", action="store_true", help="Enable image saving (default: False)")
 
     cli_args = parser.parse_args()  # Parse command-line arguments
