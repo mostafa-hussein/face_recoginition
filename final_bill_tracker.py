@@ -145,7 +145,7 @@ class MultiRoomPersonTracker(Node):
         self.logger.info("[INIT] Loaded face database with {} entries".format(len(self.face_database)))
         return None  # Not used directly anymore
 
-    def is_same_person(self, embedding, thr=0.8):
+    def is_same_person(self, embedding, thr=0.7):
         if not hasattr(self, 'face_database') or not self.face_database:
             return False, 1.0  # fallback distance
 
@@ -307,14 +307,14 @@ class MultiRoomPersonTracker(Node):
                 room: self.process_frame(room, frame)
                 for room, frame in self.frames.items()
             }
-            # try:
-            #     top = np.hstack((annotated_frames["living_room"], annotated_frames["Dining_Room"], annotated_frames["tv_Room"] ))
-            #     bottom = np.hstack((annotated_frames["BedRoom_way"], annotated_frames["Doorway"],annotated_frames["tv_Room"] ))
+            try:
+                top = np.hstack((annotated_frames["living_room"], annotated_frames["Dining_Room"], annotated_frames["tv_Room"] ))
+                bottom = np.hstack((annotated_frames["BedRoom_way"], annotated_frames["Doorway"],annotated_frames["tv_Room"] ))
 
-            #     grid = np.vstack((top, bottom ))
-            # except Exception as e:
-            #     self.logger.error(f"[ERROR] Failed to create display grid: {e}")
-            #     return  
+                grid = np.vstack((top, bottom ))
+            except Exception as e:
+                self.logger.error(f"[ERROR] Failed to create display grid: {e}")
+                return  
             
             # y_offset = 10
             # for person, info in self.person_locations.items():
