@@ -61,6 +61,35 @@ import cv2
 import numpy as np
 import mediapipe as mp
 
+import requests
+import json
+
+# Replace with your camera info
+ip = "192.168.50.138"
+user = "admin"
+password = "r1project"
+
+def send_cmd(cmd, payload=None):
+    url = f"http://{ip}/cgi-bin/api.cgi?cmd={cmd}&user={user}&password={password}"
+    if payload:
+        r = requests.post(url, data=json.dumps(payload))
+    else:
+        r = requests.get(url)
+    return r.text
+
+
+# Turn IR night vision LEDs ON
+def ir_on():
+    payload = [{"cmd":"SetIrLights","action":0,"param":{"IrLights":{"state":"On"}}}]
+    print(send_cmd("SetIrLights", payload))
+
+def ir_off():
+    payload = [{"cmd":"SetIrLights","action":0,"param":{"IrLights":{"state":"Off"}}}]
+    print(send_cmd("SetIrLights", payload))
+
+
+
+ir_on()  # Turn on IR night vision LEDs
 
 # ----------------------------
 # Geometry helpers
@@ -412,7 +441,11 @@ def run(args: argparse.Namespace):
     disp = bool(args.display) and not args.headless
 
     # Video capture
-    cap_src = args.src if args.src is not None else int(args.camera)
+    # cap_src = args.src if args.src is not None else int(args.camera)
+    # cap = cv2.VideoCapture(cap_src)
+
+    cap_src = f"rtsp://{user}:{password}@{ip}:554/Preview_01_sub"
+
     cap = cv2.VideoCapture(cap_src)
     if not cap.isOpened():
         print(f"[ERROR] Failed to open source: {cap_src}")
