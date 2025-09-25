@@ -60,14 +60,57 @@ from typing import Optional, Tuple, List
 import cv2
 import numpy as np
 import mediapipe as mp
-
+import socket
+from polars import String
 import requests
 import json
+from collections import deque
+
+
+import rclpy
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
+from std_msgs.msg import Bool 
 
 # Replace with your camera info
 ip = "192.168.50.138"
 user = "admin"
 password = "r1project"
+
+
+UDP_IP = "0.0.0.0"
+UDP_PORT = 5001
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind((UDP_IP, UDP_PORT))
+
+SERVER_IP = "192.168.50.40"
+PORT = 65432
+# MESSAGE = "Hi suzan."
+MESSAGE = "true"
+
+# while True:
+#     try:
+#         packet, addr = sock.recvfrom(65536)
+#         buffer += packet
+
+#         # Try decoding the buffer
+#         img_array = np.frombuffer(buffer, dtype=np.uint8)
+#         frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+#         if frame is not None:
+#             cv2.imshow("Received Frame", frame)
+#             buffer = b""  # Reset after successful frame
+#     except Exception as e:
+#         print(f"Error: {e}")
+#         buffer = b""  # Reset buffer on failure
+
+#     if cv2.waitKey(1) & 0xFF == ord('q'):
+#         break
+
+# cv2.destroyAllWindows()
+# # ----------------------------
+
 
 def send_cmd(cmd, payload=None):
     url = f"http://{ip}/cgi-bin/api.cgi?cmd={cmd}&user={user}&password={password}"
@@ -89,7 +132,7 @@ def ir_off():
 
 
 
-ir_on()  # Turn on IR night vision LEDs
+# ir_on()  # Turn on IR night vision LEDs
 
 # ----------------------------
 # Geometry helpers
@@ -433,27 +476,118 @@ class Visualizer:
         #             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200,200,200), 1, cv2.LINE_AA)
 
 
+class SleepMonitorAlarm():
+    def __init__(self, fps=10):
+        self.fps = fps
+        self.sleep_window = deque()  # 10 minutes
+        self.awake_window = deque()       # 1 minute
+        self.alarm_triggered = False
+        self.last_sleep_monitor_label = False
+
+        rclpy.init()
+        self.node = Node('simple_publisher')
+        self.monitor_publisher = self.node.create_publisher(Bool, f'sleep_monitor', 10)
+
+    def _is_sleeping_state(self):
+        valid_sleep_frames = sum(
+            1 for label, conf in self.sleep_window if label == "sleeping" and conf > 0.5
+        )
+        # Allow up to ~5 glitches in a row (so we don't interrupt long sleeping streak)
+
+        required_sleep_frames = int(0.80 * self.fps*20)  # 80%
+        sleep_state = valid_sleep_frames >= required_sleep_frames
+        # print(f"****valid_sleep_frames: {valid_sleep_frames}, required_sleep_frames: {required_sleep_frames}, sleeping_state: {sleep_state}")
+        return sleep_state
+
+    def _is_awake_state(self):
+        valid_awake_frames = sum(
+            1 for label, conf in self.awake_window if label in ("sitting", "standing") and conf > 0.0
+        )
+        required_awake_frames = int(0.80 * self.fps*10)  # allow brief misclassifications
+        awaking_state = valid_awake_frames >= required_awake_frames
+        # print(f"****valid_awake_frames: {valid_awake_frames}, required_awake_frames: {required_awake_frames}, awaking_state: {awaking_state}")
+        return awaking_state
+
+    def update(self, label, confidence):
+        """
+        Call this method every frame (i.e., 10 times per second) with the latest label and confidence.
+        """
+        self.sleep_window.append((label, confidence))
+
+        if self._is_sleeping_state():
+            # Start monitoring for awake state only after confirmed sleep
+            self.awake_window.append((label, confidence))
+            if self._is_awake_state():
+                self.alarm_triggered = True
+        else:
+            self.awake_window.clear()  # Not in sleep anymore; reset awake tracking
+        
+        if (self.alarm_triggered):
+            for _ in range(2 * 60):
+                self.publish_data(self.alarm_triggered)
+                time.sleep(0.5)
+        else:
+            self.publish_data(self.alarm_triggered)
+
+    def is_alarm_triggered(self):
+        return self.alarm_triggered
+
+    def reset_alarm(self):
+        self.alarm_triggered = False
+        self.awake_window.clear()
+        self.sleep_window.clear()
+
+    def is_protocol_time(self, st , en):
+        """
+        Returns True if `now` (a datetime.time) is between 11:00 and 14:00.
+        """
+        from datetime import datetime
+        from datetime import time as ttime
+
+        now = datetime.now().time()
+        start = ttime(st, 0)
+        end   = ttime(en, 0)
+        return start <= now <= end
+    
+    def publish_data(self, data):
+
+        if not (self.is_protocol_time(21,23) or self.is_protocol_time(0,12)):
+            if data:
+                print (f'********The sleep monitor protocol should triger but will not as it is not time for it *******')
+            self.last_sleep_monitor_label = False
+
+        tmp_msg = Bool()
+        self.last_sleep_monitor_label = data
+        tmp_msg.data = self.last_sleep_monitor_label
+        self.monitor_publisher.publish(tmp_msg)
+
+
 # ----------------------------
 # Pipeline
 # ----------------------------
 
 def run(args: argparse.Namespace):
     disp = bool(args.display) and not args.headless
+    buffer = b""
+
 
     # Video capture
     # cap_src = args.src if args.src is not None else int(args.camera)
     # cap = cv2.VideoCapture(cap_src)
 
-    cap_src = f"rtsp://{user}:{password}@{ip}:554/Preview_01_sub"
+    # cap_src = f"rtsp://{user}:{password}@{ip}:554/Preview_01_sub"
 
-    cap = cv2.VideoCapture(cap_src)
-    if not cap.isOpened():
-        print(f"[ERROR] Failed to open source: {cap_src}")
-        return
+    # cap_src = 4
+    # cap = cv2.VideoCapture(cap_src)
+    # if not cap.isOpened():
+    #     print(f"[ERROR] Failed to open source: {cap_src}")
+    #     return
+    
 
     pose = MediaPipePose(kp_thr=args.kp_thr)
     clf  = PostureClassifier()
     vis  = Visualizer(kp_thr=args.kp_thr)
+    alarm = SleepMonitorAlarm()
 
     csv_writer = None
     csv_fh = None
@@ -480,10 +614,22 @@ def run(args: argparse.Namespace):
 
     try:
         while True:
-            ok, frame = cap.read()
-            if not ok or frame is None:
-                print("[WARN] Stream ended or frame grab failed.")
-                break
+            packet, addr = sock.recvfrom(65536)
+            buffer += packet
+
+            # Try decoding the buffer
+            img_array = np.frombuffer(buffer, dtype=np.uint8)
+            frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+            if frame is not None:
+                # cv2.imshow("Received Frame", frame)
+                buffer = b""  # Reset after successful frame
+
+            # ok, frame = cap.read()
+            if frame is None:  # not ok or 
+                print("[[[[[[WARN]]]]]]]] frame grab failed.")
+                buffer = b""
+                continue
 
             h, w = frame.shape[:2]
             res = pose.process(frame)
@@ -504,6 +650,24 @@ def run(args: argparse.Namespace):
                 if len(label_hist) >= 1:
                     label = Counter(label_hist).most_common(1)[0][0]
 
+            alarm.update(label, conf)
+            if alarm.is_alarm_triggered():
+                print("[[[[ALERT]]]]] User has been sleeping for 10 minutes and now he is waking up!")
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s :
+                    s.connect((SERVER_IP, PORT))
+                    s.sendall(MESSAGE.encode('utf-8'))
+                time.sleep(10)
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s :
+                    s.connect((SERVER_IP, PORT))
+                    s.sendall(MESSAGE.encode('utf-8'))
+
+                time.sleep(10)
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s :
+                    s.connect((SERVER_IP, PORT))
+                    s.sendall(MESSAGE.encode('utf-8'))
+
+                alarm.reset_alarm()
+            
             # FPS
             t_now = time.time()
             dt = t_now - t_prev; t_prev = t_now
@@ -567,7 +731,7 @@ def parse_args(argv=None):
     p.add_argument("--display", type=lambda x: str(x).lower() in ("1","true","yes"), default=True, help="Show OpenCV window")
     p.add_argument("--headless", action="store_true", help="Disable window")
     p.add_argument("--kp-thr", type=float, default=0.5, help="Landmark visibility threshold (0..1)")
-    p.add_argument("--conf-thr", type=float, default=0.5, help="Min confidence to accept label, else 'uncertain'")
+    p.add_argument("--conf-thr", type=float, default=0.3, help="Min confidence to accept label, else 'uncertain'")
     p.add_argument("--smooth", type=int, default=5, help="Majority smoothing window (0 disables)")
     p.add_argument("--csv", type=str, default=None, help="Optional CSV output path")
     args = p.parse_args(argv)
@@ -576,6 +740,7 @@ def parse_args(argv=None):
 
 def main():
     args = parse_args()
+
     run(args)
 
 if __name__ == "__main__":
