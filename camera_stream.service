@@ -1,0 +1,17 @@
+[Unit]
+Description=Start Camera Streaming Script on Boot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/bin/bash /home/carl/projects/face_recoginition/start_camera.sh
+WorkingDirectory=/home/carl/projects/face_recoginition
+User=carl
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/camera_stream.log
+StandardError=append:/var/log/camera_stream.log
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
