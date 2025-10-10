@@ -33,6 +33,7 @@ class ObjectTracker(Node):
         self.falut_count = 0
         self.coffee_counter =0 
         self.food_counter =0
+        self.print_counter = 0
 
         
         self.get_logger().info(f'data base name {self.database}')
@@ -54,7 +55,7 @@ class ObjectTracker(Node):
             name = str(device.attributes.get("name"))
             if "ZED" not in name and "W2G" in name:
                 self.usb_id = int(device.device_node[-1])
-                print(f'Camera Id = {self.usb_id}')
+                self.get_logger().info(f'Camera Id = {self.usb_id}')
                 break
 
         self.get_logger().info(f'Starting insight face init')
@@ -77,15 +78,20 @@ class ObjectTracker(Node):
         
     def publish_data(self):
         """Continuously publish the last known values."""
-        print (f'Running face deteion and recoiginition')
+        self.print_counter += 1
+        if self.print_counter % 500 == 0:
+            self.get_logger().info(f'Running face detection and recognition ')
         self.run()
 
-        if not self.is_protocol_time(8,12):
-            print (f'********The coffee protocol should triger but will not as it is not time for it *******')
+        if not self.is_protocol_time(8,20):
+            # self.get_logger().info (f'********The coffee protocol should triger but will not as it is not time for it *******')
             self.last_coffee_label = False
 
-        if not self.is_protocol_time(13,15):
+        if not self.is_protocol_time(13,16):
             self.last_food_label = False
+
+        if self.last_coffee_label or self.last_food_label:
+            self.get_logger().info(f'Event protocol will be activated: Coffee label is {self.last_coffee_label} and food label is {self.last_food_label}')
 
         tmp_msg = Bool()
         tmp_msg.data = self.last_coffee_label
@@ -103,9 +109,9 @@ class ObjectTracker(Node):
             name = name.split("_")[0]
             if name == "p1" or name == "p3":
                 if cosine(embedding , emb_db) < thr:
-                    print(f"Found target face matched : {name} ")
+                    self.get_logger().info(f"Found target face matched : {name} ")
                     return True
-        print("Target face not found")
+        self.get_logger().info("Target face not found")
         return False
     
     def is_protocol_time(self, st , en):
@@ -118,12 +124,13 @@ class ObjectTracker(Node):
         return start <= now <= end
     
     def run (self):
-        linger_secs   = 10                        # time threshold
-        area_tol      = 1000                      # area threshold
+
+        linger_secs   = 6                         # time threshold
+        area_tol      = 6000                      # area threshold
 
         ok, frame = self.cap.read()
         if not ok:
-            print (f'****problem with the camera capture****')
+            self.get_logger().info (f'****problem with the camera capture****')
             return
         
         faces = self.arcface.get(frame)
@@ -134,7 +141,7 @@ class ObjectTracker(Node):
                 w  = x2 - x1                             # width in pixels
                 h  = y2 - y1                             # height in pixels
                 area = w * h
-                print(f"Face area: {area} px²")
+                self.get_logger().info(f"Face area: {area} px²")
                 cx, cy = (x1 + x2)//2, (y1 + y2)//2
                 name = "target"
                 # if cx > 320:
@@ -159,20 +166,20 @@ class ObjectTracker(Node):
                 # else:
                 #     self.update_labels(coffee=False , food= True)
 
-                print (f'******* coffee counter = {self.coffee_counter}')
-                print (f'******* Food counter = {self.food_counter}')
+                self.get_logger().info (f'******* coffee counter = {self.coffee_counter}')
+                self.get_logger().info (f'******* Food counter = {self.food_counter}')
         else:
             self.falut_count += 1
-            if self.falut_count > 10:
+            if self.falut_count > 20:
                 self.t_prev = None
                 self.flag_linger  = False
                 self.falut_count = 0
                 self.food_counter = 0
                 self.coffee_counter = 0
-                self.update_labels(coffee=False , food= False)  
+                # self.update_labels(coffee=False , food= False)  
 
-        
-        print(f'Flag status is ########## {self.flag_linger} ##########')
+        if self.print_counter % 500 == 0:
+            self.get_logger().info(f'Flag status is ########## {self.flag_linger} ##########')
 
 
 def main(args=None):
