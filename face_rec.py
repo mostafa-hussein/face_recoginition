@@ -1,5 +1,5 @@
 """"""
-import pickle, cv2, os, math
+import pickle, cv2, os, math, sys
 import time as tm
 import numpy as np
 from scipy.spatial.distance import cosine
@@ -13,8 +13,12 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import Bool  
 import socket
-from datetime import datetime , time
+from datetime import datetime 
+from datetime import time as dtime
 import matplotlib.pyplot as plt
+import subprocess
+
+now = lambda: datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 
 class ObjectTracker(Node):
@@ -34,10 +38,11 @@ class ObjectTracker(Node):
         self.coffee_counter =0 
         self.food_counter =0
         self.print_counter = 0
+        self.st_pub_time = tm.time()
 
         
-        self.get_logger().info(f'data base name {self.database}')
-        self.get_logger().info(f'save image set to {self.save_image}')
+        self.get_logger().info(f'{now()}| data base name {self.database}')
+        self.get_logger().info(f'{now()}| save image set to {self.save_image}')
 
         self.coffee_publisher = self.create_publisher(Bool, f'coffee', 10)
         self.food_publisher = self.create_publisher(Bool, f'heating_food', 10)
@@ -48,30 +53,59 @@ class ObjectTracker(Node):
             self.face_database = pickle.load(f)
         
         context = pyudev.Context()
-        self.get_logger().info(f'Checking the connected cameras')
+        self.get_logger().info(f'{now()}| Checking the connected cameras')
         self.usb_id = -1
 
         for device in context.list_devices(subsystem='video4linux'):
             name = str(device.attributes.get("name"))
-            if "ZED" not in name and "W2G" in name:
+            if "W2G" in name:
                 self.usb_id = int(device.device_node[-1])
-                self.get_logger().info(f'Camera Id = {self.usb_id}')
+                self.get_logger().info(f'{now()}| Camera Id = {self.usb_id}')
                 break
 
-        self.get_logger().info(f'Starting insight face init')
+        self.get_logger().info(f'{now()}| Starting insight face init')
         self.arcface = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
         self.arcface.prepare(ctx_id=0, det_size=(640, 640))
+
         
         self.cap = cv2.VideoCapture(self.usb_id)
         self.cap.set(cv2.CAP_PROP_FPS, 5)
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
-        self.get_logger().info(f'Finished all init')
+        if not self.cap.isOpened():
+            self.get_logger().info(f"[ERROR] Unable to open camera with ID {self.usb_id}")
+            self.retry_camera()
+
+        self.get_logger().info(f'{now()}| Finished all init')
+
+        
+
+    def retry_camera(self, retries=10, delay=2):
+        """Retry connecting to camera a few times before giving up."""
+        for attempt in range(1, retries + 1):
+            self.get_logger().info(f"[INFO] Retrying to open camera (Attempt {attempt}/{retries})...")
+            tm.sleep(delay)
+            self.cap.release()
+            self.cap = cv2.VideoCapture(self.usb_id)
+
+            if self.cap.isOpened():
+                self.get_logger().info("[INFO] Camera reconnected successfully!")
+                return
+        self.get_logger().info("[FATAL] Camera could not be opened after several retries.")
+        
+        tm.sleep(5)  # wait before rebooting
+        try:
+            subprocess.run(["sudo", "reboot"], check=True)
+        except subprocess.CalledProcessError as e:
+            self.get_logger().info(f"Failed to reboot: {e}")
+        
+        
+       
     
     def update_labels(self, coffee , food):
         """Update labels with new values from HeadTracker."""
-        self.get_logger().info(f'Coffee Lable have been updated to {coffee}')
-        self.get_logger().info(f'Food lable have been updated to {food}')
+        # self.get_logger().info(f'{now()}| Coffee Lable have been updated to {coffee}')
+        # self.get_logger().info(f'{now()}| Food lable have been updated to {food}')
 
         self.last_coffee_label = coffee
         self.last_food_label = food
@@ -79,20 +113,27 @@ class ObjectTracker(Node):
     def publish_data(self):
         """Continuously publish the last known values."""
         self.print_counter += 1
-        if self.print_counter % 500 == 0:
-            self.get_logger().info(f'Running face detection and recognition ')
+
         self.run()
 
-        if not self.is_protocol_time(8,20):
-            # self.get_logger().info (f'********The coffee protocol should triger but will not as it is not time for it *******')
-            self.last_coffee_label = False
+        if self.last_coffee_label:
+            if not (self.is_protocol_time(8, 0, 13, 0) or self.is_protocol_time(17, 0, 20, 0)):
+                self.get_logger().info (f'{now()}|********The coffee protocol should triger but will not as it is not time for it *******')
+                self.last_coffee_label = False
 
-        if not self.is_protocol_time(13,16):
-            self.last_food_label = False
+        if self.last_food_label:
+            if not self.is_protocol_time(13, 1, 16, 59):
+                self.get_logger().info (f'{now()}|********The Food protocol should triger but will not as it is not time for it *******')
+                self.last_food_label = False
 
         if self.last_coffee_label or self.last_food_label:
-            self.get_logger().info(f'Event protocol will be activated: Coffee label is {self.last_coffee_label} and food label is {self.last_food_label}')
+            self.get_logger().info(f'{now()}| Event protocol will be activated: Coffee label is {self.last_coffee_label} and food label is {self.last_food_label}')
 
+
+        if self.last_coffee_label or self.last_food_label:
+            self.st_pub_time = tm.time()
+
+        
         tmp_msg = Bool()
         tmp_msg.data = self.last_coffee_label
         self.coffee_publisher.publish(tmp_msg)
@@ -102,6 +143,23 @@ class ObjectTracker(Node):
         self.food_publisher.publish(tmp_msg)
 
 
+        if self.last_coffee_label or self.last_food_label:
+            
+            for _ in range(120):  
+                tmp_msg.data = self.last_coffee_label
+                self.coffee_publisher.publish(tmp_msg)
+                tmp_msg.data = self.last_food_label
+                self.food_publisher.publish(tmp_msg)
+                tm.sleep(0.5)  # Sleep for 10 minutes to avoid rapid re-triggering
+            
+            self.update_labels(coffee=False , food= False)
+            tmp_msg.data = self.last_coffee_label
+            self.coffee_publisher.publish(tmp_msg)
+            tmp_msg.data = self.last_food_label
+            self.food_publisher.publish(tmp_msg)
+            tm.sleep(600)  # Sleep for 10 minutes to avoid rapid re-triggering
+
+
     def match_face(self, embedding, thr=0.8):
         if not self.face_database: return "unknown"
         
@@ -109,18 +167,18 @@ class ObjectTracker(Node):
             name = name.split("_")[0]
             if name == "p1" or name == "p3":
                 if cosine(embedding , emb_db) < thr:
-                    self.get_logger().info(f"Found target face matched : {name} ")
+                    self.get_logger().info(f'{now()}|Found target face matched : {name} ')
                     return True
-        self.get_logger().info("Target face not found")
+        # self.get_logger().info(f'{now()}|Target face not found')
         return False
     
-    def is_protocol_time(self, st , en):
+    def is_protocol_time(self, start_hour, start_min, end_hour, end_min):
         """
-        Returns True if `now` (a datetime.time) is between 11:00 and 14:00.
+        Returns True if current time is between start_hour:start_min and end_hour:end_min.
         """
         now = datetime.now().time()
-        start = time(st, 0)   
-        end   = time(en, 0)   
+        start = dtime(start_hour, start_min)   
+        end   = dtime(end_hour, end_min)   
         return start <= now <= end
     
     def run (self):
@@ -131,6 +189,7 @@ class ObjectTracker(Node):
         ok, frame = self.cap.read()
         if not ok:
             self.get_logger().info (f'****problem with the camera capture****')
+            self.retry_camera()
             return
         
         faces = self.arcface.get(frame)
@@ -141,7 +200,7 @@ class ObjectTracker(Node):
                 w  = x2 - x1                             # width in pixels
                 h  = y2 - y1                             # height in pixels
                 area = w * h
-                self.get_logger().info(f"Face area: {area} px²")
+                self.get_logger().info(f'{now()}|Face area: {area}')
                 cx, cy = (x1 + x2)//2, (y1 + y2)//2
                 name = "target"
                 # if cx > 320:
@@ -155,19 +214,20 @@ class ObjectTracker(Node):
         
         # ─────────────── lingering-logic helpers ──────────────────────────────────────
         #     
-        now = tm.time()
+        t_now = tm.time()
         if name =="target" and area > area_tol:
             # first time seen OR moved too far → reset timer
-            if now - self.t_prev >= linger_secs:
+            if t_now - self.t_prev >= linger_secs:
                 self.flag_linger = True
                 self.update_labels(coffee=True , food= True)
+                self.get_logger().info(f'{now()}| Flag status ########## {self.flag_linger} ##########')
                 # if self.coffee_counter > self.food_counter:
                 #     self.update_labels(coffee=True , food= False)
                 # else:
                 #     self.update_labels(coffee=False , food= True)
 
-                self.get_logger().info (f'******* coffee counter = {self.coffee_counter}')
-                self.get_logger().info (f'******* Food counter = {self.food_counter}')
+                # self.get_logger().info (f'******* coffee counter = {self.coffee_counter}')
+                # self.get_logger().info (f'******* Food counter = {self.food_counter}')
         else:
             self.falut_count += 1
             if self.falut_count > 20:
@@ -177,15 +237,13 @@ class ObjectTracker(Node):
                 self.food_counter = 0
                 self.coffee_counter = 0
                 # self.update_labels(coffee=False , food= False)  
-
-        if self.print_counter % 500 == 0:
-            self.get_logger().info(f'Flag status is ########## {self.flag_linger} ##########')
+            
 
 
 def main(args=None):
 
     parser = argparse.ArgumentParser(description="ROS2 Object Tracker")
-    parser.add_argument("--db", type=str, default="/home/jetson/projects/face_recoginition/face_database_lab_2.pkl", help="Name of the database")
+    parser.add_argument("--db", type=str, default="/home/mostafa/projects/face_recoginition/face_database_lab_2.pkl", help="Name of the database")
     parser.add_argument("--save_image", action="store_true", help="Enable image saving (default: False)")
 
     cli_args = parser.parse_args()  # Parse command-line arguments
