@@ -7,7 +7,7 @@ from insightface.app import FaceAnalysis
 app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
 app.prepare(ctx_id=0, det_size=(640, 640))
 
-with open("face_database_lab_2.pkl", "rb") as f:
+with open("face_database.pkl", "rb") as f:
     face_database = pickle.load(f)
     # for name, stored_embedding in face_database.items():
     #     print (name)
@@ -16,7 +16,7 @@ def match_face(embedding, thr=0.8):
     
     for name, emb_db in face_database.items():
         name = name.split("_")[0]
-        if name == "p1" or name == "p3":
+        if name == "p1" or name == "p3" or name == "p2" or name == "p4" or name == "p5":
             if cosine(embedding , emb_db) < thr:
                 print(f"Found target face matched : {name} ")
                 return True

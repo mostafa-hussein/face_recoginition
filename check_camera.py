@@ -1,6 +1,5 @@
 import cv2
 import pyudev
-sdfsdf
 context = pyudev.Context()
 
 print(f'Checking the connected cameras')
@@ -19,5 +18,3 @@ for device in context.list_devices(subsystem='video4linux'):
     if "ZED" in name and "W2G" not in name:
         zed_id = int(device.device_node[-1])
         print (f'ZED camer name: {name} with ID {zed_id}')
-
-
