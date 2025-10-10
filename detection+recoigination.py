@@ -27,7 +27,7 @@ def match_face(embedding, thr=0.8):
     return names[i] if dists[i] < thr else "unknown"
     
 # ─── 4. Camera loop ───────────────────────────────────────────────────────────
-cap = cv2.VideoCapture(0)        # USB cam
+cap = cv2.VideoCapture(2)        # USB cam
 cap.set(cv2.CAP_PROP_FPS, 10)
 # new_width = 1920
 # new_height = 1080
