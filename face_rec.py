@@ -95,7 +95,7 @@ class ObjectTracker(Node):
         
         tm.sleep(5)  # wait before rebooting
         try:
-            subprocess.run(["sudo", "reboot"], check=True)
+            subprocess.run(["reboot"], check=True)
         except subprocess.CalledProcessError as e:
             self.get_logger().info(f"Failed to reboot: {e}")
         

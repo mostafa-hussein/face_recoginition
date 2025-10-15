@@ -1,7 +1,4 @@
 #!/bin/bash
-
-xhost +
-
 source /opt/ros/humble/setup.bash &&
 export ROS_DOMAIN_ID=25 &&
 
@@ -12,7 +9,7 @@ TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S") &&
 LOG_FILE="/home/jetson/projects/face_recoginition/logs/coffee_triger_$TIMESTAMP.log" &&
 
 # Start Python script with logging to both terminal and file
-sudo python3 /home/jetson/projects/face_recoginition/face_rec.py  --db /home/jetson/projects/face_recoginition/face_database_gaskin.pkl 2>&1 | tee "$LOG_FILE" &
+python3 /home/jetson/projects/face_recoginition/face_rec.py  --db /home/jetson/projects/face_recoginition/face_database_gaskin.pkl 2>&1 | tee "$LOG_FILE" &
 
 # Wait for commands to finish
 wait
