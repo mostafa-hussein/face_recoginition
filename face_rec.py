@@ -145,13 +145,15 @@ class ObjectTracker(Node):
 
         if self.last_coffee_label or self.last_food_label:
             
-            for _ in range(120):  
+            # Sending True for 10 min
+            for _ in range(120*10):
                 tmp_msg.data = self.last_coffee_label
                 self.coffee_publisher.publish(tmp_msg)
                 tmp_msg.data = self.last_food_label
                 self.food_publisher.publish(tmp_msg)
-                tm.sleep(0.5)  # Sleep for 10 minutes to avoid rapid re-triggering
+                tm.sleep(0.5)  
             
+            # Sleep for 10 minutes to avoid rapid re-triggering
             self.update_labels(coffee=False , food= False)
             self.t_prev = None
             self.flag_linger  = False
@@ -160,7 +162,7 @@ class ObjectTracker(Node):
             self.coffee_publisher.publish(tmp_msg)
             tmp_msg.data = self.last_food_label
             self.food_publisher.publish(tmp_msg)
-            tm.sleep(600)  # Sleep for 10 minutes to avoid rapid re-triggering
+            tm.sleep(600) 
 
 
     def match_face(self, embedding, thr=0.8):
