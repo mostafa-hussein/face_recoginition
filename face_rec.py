@@ -153,6 +153,9 @@ class ObjectTracker(Node):
                 tm.sleep(0.5)  # Sleep for 10 minutes to avoid rapid re-triggering
             
             self.update_labels(coffee=False , food= False)
+            self.t_prev = None
+            self.flag_linger  = False
+            self.falut_count = 0
             tmp_msg.data = self.last_coffee_label
             self.coffee_publisher.publish(tmp_msg)
             tmp_msg.data = self.last_food_label
@@ -234,9 +237,10 @@ class ObjectTracker(Node):
                 self.t_prev = None
                 self.flag_linger  = False
                 self.falut_count = 0
-                self.food_counter = 0
-                self.coffee_counter = 0
-                # self.update_labels(coffee=False , food= False)  
+                self.update_labels(coffee=False , food= False)  
+                # self.food_counter = 0
+                # self.coffee_counter = 0
+                
             
 
 
