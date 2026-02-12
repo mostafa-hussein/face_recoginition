@@ -79,15 +79,15 @@ password = "r1project"
 
 
 UDP_IP = "0.0.0.0"
-UDP_PORT = 5001
+UDP_PORT = 5007
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind((UDP_IP, UDP_PORT))
 
 SERVER_IP = "192.168.50.40"
 PORT = 65432
-# MESSAGE = "Hi suzan."
-MESSAGE = "true"
+MESSAGE = "Hi Ola. Akash is trying to get up, please go check up on him"
+# MESSAGE = "true"
 
 # while True:
 #     try:
@@ -109,26 +109,28 @@ MESSAGE = "true"
 #         break
 
 # cv2.destroyAllWindows()
-# # ----------------------------
+# exit(1)
+# ----------------------------
 
 
-def send_cmd(cmd, payload=None):
-    url = f"http://{ip}/cgi-bin/api.cgi?cmd={cmd}&user={user}&password={password}"
-    if payload:
-        r = requests.post(url, data=json.dumps(payload))
-    else:
-        r = requests.get(url)
-    return r.text
+
+# def send_cmd(cmd, payload=None):
+#     url = f"http://{ip}/cgi-bin/api.cgi?cmd={cmd}&user={user}&password={password}"
+#     if payload:
+#         r = requests.post(url, data=json.dumps(payload))
+#     else:
+#         r = requests.get(url)
+#     return r.text
 
 
-# Turn IR night vision LEDs ON
-def ir_on():
-    payload = [{"cmd":"SetIrLights","action":0,"param":{"IrLights":{"state":"On"}}}]
-    print(send_cmd("SetIrLights", payload))
+# # Turn IR night vision LEDs ON
+# def ir_on():
+#     payload = [{"cmd":"SetIrLights","action":0,"param":{"IrLights":{"state":"On"}}}]
+#     print(send_cmd("SetIrLights", payload))
 
-def ir_off():
-    payload = [{"cmd":"SetIrLights","action":0,"param":{"IrLights":{"state":"Off"}}}]
-    print(send_cmd("SetIrLights", payload))
+# def ir_off():
+#     payload = [{"cmd":"SetIrLights","action":0,"param":{"IrLights":{"state":"Off"}}}]
+#     print(send_cmd("SetIrLights", payload))
 
 
 
@@ -486,7 +488,7 @@ class SleepMonitorAlarm():
 
         rclpy.init()
         self.node = Node('simple_publisher')
-        self.monitor_publisher = self.node.create_publisher(Bool, f'sleep_monitor', 10)
+        self.monitor_publisher = self.node.create_publisher(Bool, f'night_video', 60)
 
     def _is_sleeping_state(self):
         valid_sleep_frames = sum(
@@ -494,7 +496,7 @@ class SleepMonitorAlarm():
         )
         # Allow up to ~5 glitches in a row (so we don't interrupt long sleeping streak)
 
-        required_sleep_frames = int(0.80 * self.fps*20)  # 80%
+        required_sleep_frames = int(0.80 * self.fps*60)  # 80%
         sleep_state = valid_sleep_frames >= required_sleep_frames
         # print(f"****valid_sleep_frames: {valid_sleep_frames}, required_sleep_frames: {required_sleep_frames}, sleeping_state: {sleep_state}")
         return sleep_state
@@ -503,7 +505,7 @@ class SleepMonitorAlarm():
         valid_awake_frames = sum(
             1 for label, conf in self.awake_window if label in ("sitting", "standing") and conf > 0.0
         )
-        required_awake_frames = int(0.80 * self.fps*10)  # allow brief misclassifications
+        required_awake_frames = int(0.80 * self.fps*5)  # allow brief misclassifications
         awaking_state = valid_awake_frames >= required_awake_frames
         # print(f"****valid_awake_frames: {valid_awake_frames}, required_awake_frames: {required_awake_frames}, awaking_state: {awaking_state}")
         return awaking_state
@@ -523,9 +525,22 @@ class SleepMonitorAlarm():
             self.awake_window.clear()  # Not in sleep anymore; reset awake tracking
         
         if (self.alarm_triggered):
-            for _ in range(2 * 60):
+
+            self.publish_data(self.alarm_triggered)
+            time.sleep(0.5)
+
+            print("[[[[ALERT]]]]] User has been sleeping for 10 minutes and now he is waking up!")
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s :
+                s.connect((SERVER_IP, PORT))
+                s.sendall(MESSAGE.encode('utf-8'))
+            time.sleep(10)
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s :
+                s.connect((SERVER_IP, PORT))
+                s.sendall(MESSAGE.encode('utf-8'))
+
+            for _ in range(1 * 60):
                 self.publish_data(self.alarm_triggered)
-                time.sleep(0.5)
+                time.sleep(1)
         else:
             self.publish_data(self.alarm_triggered)
 
@@ -551,7 +566,7 @@ class SleepMonitorAlarm():
     
     def publish_data(self, data):
 
-        if not (self.is_protocol_time(21,23) or self.is_protocol_time(0,12)):
+        if not (self.is_protocol_time(0,23)):
             if data:
                 print (f'********The sleep monitor protocol should triger but will not as it is not time for it *******')
             self.last_sleep_monitor_label = False
@@ -652,20 +667,6 @@ def run(args: argparse.Namespace):
 
             alarm.update(label, conf)
             if alarm.is_alarm_triggered():
-                print("[[[[ALERT]]]]] User has been sleeping for 10 minutes and now he is waking up!")
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s :
-                    s.connect((SERVER_IP, PORT))
-                    s.sendall(MESSAGE.encode('utf-8'))
-                time.sleep(10)
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s :
-                    s.connect((SERVER_IP, PORT))
-                    s.sendall(MESSAGE.encode('utf-8'))
-
-                time.sleep(10)
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s :
-                    s.connect((SERVER_IP, PORT))
-                    s.sendall(MESSAGE.encode('utf-8'))
-
                 alarm.reset_alarm()
             
             # FPS

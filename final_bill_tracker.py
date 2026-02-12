@@ -199,7 +199,7 @@ class MultiRoomPersonTracker(Node):
             for face in faces:
                 fx1, fy1, fx2, fy2 = map(int, face.bbox)
                 name, dist = self.is_same_person(face.embedding)
-                if name == "pam":
+                if name == "bill":
                     self.pam_at = room
                     pam_room = self.adjust_room_name(room)
                     self.pam_at = pam_room
@@ -207,7 +207,7 @@ class MultiRoomPersonTracker(Node):
                     cv2.putText(annotated, f"Pam", (fx1, fy1 - 5),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
 
-                if name =="bill":
+                if name =="pam":
                     self.last_face_id_time = time_now
                     self.logger.info(f"[FACE] Matched target face with distance {dist:.2f}")
                     # Try to associate with track
@@ -260,31 +260,34 @@ class MultiRoomPersonTracker(Node):
             cv2.putText(annotated, f"{global_id} (ID {track_id})", (l, t - 5),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
         
-        if self.sensor_state["main_door"] and (self.person_at == "outside" or self.person_at == "Doorway"):
-            room = "outside"
-            self.person_locations["PersonA"] = {"room": room, "last_seen": time.time()}
-            self.person_at = room
-        elif self.sensor_state["motion_bedroom"] and (self.person_at == "bedroom" or self.person_at == "BedRoom_way"):
-            room = "bedroom"
-            self.person_locations["PersonA"] = {"room": room, "last_seen": time.time()}
-            self.person_at = room
+        # if self.sensor_state["main_door"] and (self.person_at == "outside" or self.person_at == "Doorway"):
+        #     room = "outside"
+        #     self.person_locations["PersonA"] = {"room": room, "last_seen": time.time()}
+        #     self.person_at = room
+        # elif self.sensor_state["motion_bedroom"] and (self.person_at == "bedroom" or self.person_at == "BedRoom_way"):
+        #     room = "bedroom"
+        #     self.person_locations["PersonA"] = {"room": room, "last_seen": time.time()}
+        #     self.person_at = room
 
         return annotated
     
     def adjust_room_name(self, room):
         
-        if self.sensor_state["main_door"] and (room == "Doorway" or self.person_at == "outside" or self.person_at == "Doorway"):
-            room = "outside"
-        elif self.sensor_state["motion_bedroom"] and (room == "BedRoom_way" or self.person_at == "bedroom" or self.person_at == "BedRoom_way"):
-            room = "bedroom"
+        # if self.sensor_state["main_door"] and (room == "Doorway" or self.person_at == "outside" or self.person_at == "Doorway"):
+        #     room = "outside"
+        # elif self.sensor_state["motion_bedroom"] and (room == "BedRoom_way" or self.person_at == "bedroom" or self.person_at == "BedRoom_way"):
+        #     room = "bedroom"
         return room
     
     def publish_location(self,room):
         msg = String()
-        if room == "outside" or  room == "bedroom":
-            actual_room = room
-        else:
-            actual_room = "living_room"
+        actual_room = room
+
+        # if room == "outside" or  room == "bedroom":
+        #     actual_room = room
+        # else:
+        #     actual_room = "living_room"
+            
         msg.data = f"{actual_room}"
         self.publisher.publish(msg)
 
@@ -302,31 +305,32 @@ class MultiRoomPersonTracker(Node):
 
     def run_display(self):
         while True:
-            self.check_doors()
+            # self.check_doors()
             annotated_frames = {
                 room: self.process_frame(room, frame)
                 for room, frame in self.frames.items()
             }
             try:
-                top = np.hstack((annotated_frames["living_room"], annotated_frames["Dining_Room"], annotated_frames["tv_Room"] ))
-                bottom = np.hstack((annotated_frames["BedRoom_way"], annotated_frames["Doorway"],annotated_frames["tv_Room"] ))
+                top = np.hstack((annotated_frames["living_room"], annotated_frames["Dining_Room"]))
+                bottom = np.hstack((annotated_frames["BedRoom"], annotated_frames["Doorway"]))
 
                 grid = np.vstack((top, bottom ))
             except Exception as e:
                 self.logger.error(f"[ERROR] Failed to create display grid: {e}")
                 return  
             
-            # y_offset = 10
-            # for person, info in self.person_locations.items():
-            #     if time.time() - info["last_seen"] < 5:
-            #         status = f"{person} is in {info['room']} (seen {int(time.time() - info['last_seen'])}s ago)"
-            #         cv2.putText(grid, status, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            #         y_offset += 20
+            y_offset = 40
+            for person, info in self.person_locations.items():
+                if time.time() - info["last_seen"] < 5:
+                    status = f"Target person is in {info['room']} (seen {int(time.time() - info['last_seen'])}s ago)"
+                    
+                    cv2.putText(grid, status, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX,1.5, (0, 0, 0), 4)
+                    y_offset += 20
             
-            # grid_small = cv2.resize(grid, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
-            # cv2.imshow("Multi-Room Person Tracker", grid_small)
-            # if cv2.waitKey(1) & 0xFF == ord('q'):
-            #     break
+            grid_small = cv2.resize(grid, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+            cv2.imshow("Multi-Room Person Tracker", grid)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
 
             self.publish_location(self.person_at)
         # cv2.destroyAllWindows()
@@ -336,15 +340,14 @@ def main():
     rclpy.init()
     try:
         cam_ports = {
-            "Doorway": 5005,
-            "BedRoom_way": 5006,
-            "living_room": 5007,
-            "tv_Room": 5008,
-            "Dining_Room": 5009
+            "Doorway": 5009,
+            "BedRoom": 5007,
+            "living_room": 5008,
+            "Dining_Room": 5005,
         }
         tracker_node = MultiRoomPersonTracker(
             cam_ports=cam_ports,
-            database_path="/home/mostafa/projects/face_recoginition/face_database_mueller.pkl",
+            database_path="/home/carl/projects/face_recoginition/face_database_lab_2.pkl",
             display_size=(640, 480),
             ros_topic='person_location'
         )
