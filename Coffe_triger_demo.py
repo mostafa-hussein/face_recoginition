@@ -30,7 +30,7 @@ MESSAGE = "Hi Dad. It seems like you need some help with your coffee. I will be 
 now = lambda: datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 UDP_IP = "0.0.0.0"
-UDP_PORT = 5006
+UDP_PORT = 6001
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind((UDP_IP, UDP_PORT))
@@ -297,7 +297,7 @@ class ObjectTracker(Node):
 def main(args=None):
 
     parser = argparse.ArgumentParser(description="ROS2 Object Tracker")
-    parser.add_argument("--db", type=str, default="/home/carl/projects/face_recoginition/face_database_lab_2.pkl", help="Name of the database")
+    parser.add_argument("--db", type=str, default="/home/carl/projects/face_recoginition/face_database_brenda.pkl", help="Name of the database")
     parser.add_argument("--save_image", action="store_true", help="Enable image saving (default: False)")
 
     cli_args = parser.parse_args()  # Parse command-line arguments
